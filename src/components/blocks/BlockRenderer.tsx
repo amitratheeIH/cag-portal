@@ -681,33 +681,49 @@ function DatasetTable({ ds }: { ds: DatasetJson }) {
             if (row.style==='bold') (rowStyle as Record<string,unknown>).fontWeight = 700
             return (
               <tr key={ri} style={rowStyle}>
-                {cols.map(col=>{
-                  const cell = row.cells?.[col.id]
-                  const cellObj = (cell !== null && typeof cell === 'object' && !Array.isArray(cell))
-                    ? cell as Record<string,unknown>
-                    : {value: cell}
-                  const align = col.align||(isNum(col.data_type)?'right':'left')
-                  let display = ''
-                  if (cellObj.nil_marker) display = 'nil'
-                  else if (cellObj.display) display = ml_s(cellObj.display as Record<string,string>|string)
-                  else display = fmtVal(cellObj.value, col.data_type)
-                  if (cellObj.is_negative) display = `(${display})`
+                {(() => {
+                  // Render cells respecting colspan — skip cols already covered
+                  const rendered: React.ReactNode[] = []
+                  let skipCols = 0
+                  cols.forEach((col, ci) => {
+                    if (skipCols > 0) { skipCols--; return }
+                    const cell = row.cells?.[col.id]
+                    const cellObj = (cell !== null && typeof cell === 'object' && !Array.isArray(cell))
+                      ? cell as Record<string,unknown>
+                      : {value: cell}
+                    const cs = typeof cellObj.colspan === 'number' && cellObj.colspan > 1 ? cellObj.colspan : undefined
+                    const rs = typeof cellObj.rowspan === 'number' && cellObj.rowspan > 1 ? cellObj.rowspan : undefined
+                    if (cs) skipCols = cs - 1
+                    const align = cs ? 'center' : (col.align||(isNum(col.data_type)?'right':'left'))
+                    let display = ''
+                    if (cellObj.nil_marker) display = 'nil'
+                    else if (cellObj.display) display = ml_s(cellObj.display as Record<string,string>|string)
+                    else display = fmtVal(cellObj.value, col.data_type)
+                    if (cellObj.is_negative) display = `(${display})`
 
-                  // Footnote marker in cell
-                  const fnMark = row.row_id ? fnMarkers[`${row.row_id}|${col.id}`] : undefined
-                  const fnIdx2 = (ds.footnotes||[]).findIndex(f => f.marker === fnMark)
-                  const fnId2 = `tbl-fn-${fnIdx2}-${fnMark}`
-                  const cellAnchorId = row.row_id ? 'cellfn-' + row.row_id + '-' + col.id : ''
-                  const fnSup = fnMark
-                    ? '<sup' + (cellAnchorId ? ' id="' + cellAnchorId + '"' : '') + ' style="color:#8b1a1a;font-size:13px;font-weight:700;font-family:system-ui;cursor:pointer"><a href="#' + fnId2 + '" style="color:#8b1a1a;text-decoration:none">' + fnMark + '</a></sup>'
-                    : ''
+                    // Footnote marker in cell
+                    const fnMark = row.row_id ? fnMarkers[`${row.row_id}|${col.id}`] : undefined
+                    const fnIdx2 = (ds.footnotes||[]).findIndex(f => f.marker === fnMark)
+                    const fnId2 = `tbl-fn-${fnIdx2}-${fnMark}`
+                    const cellAnchorId = row.row_id ? 'cellfn-' + row.row_id + '-' + col.id : ''
+                    const fnSup = fnMark
+                      ? '<sup' + (cellAnchorId ? ' id="' + cellAnchorId + '"' : '') + ' style="color:#8b1a1a;font-size:13px;font-weight:700;font-family:system-ui;cursor:pointer"><a href="#' + fnId2 + '" style="color:#8b1a1a;text-decoration:none">' + fnMark + '</a></sup>'
+                      : ''
 
-                  return (
-                    <td key={col.id} style={{...tdStyle,textAlign:align as React.CSSProperties['textAlign'],fontWeight:cellObj.style==='bold'?700:undefined}}>
-                      <span dangerouslySetInnerHTML={{__html: safe(display) + fnSup}}/>
-                    </td>
-                  )
-                })}
+                    rendered.push(
+                      <td key={col.id} colSpan={cs} rowSpan={rs}
+                        style={{
+                          ...tdStyle,
+                          textAlign: align as React.CSSProperties['textAlign'],
+                          fontWeight: cellObj.style==='bold' || isSubHdr ? 700 : undefined,
+                          background: cs && isSubHdr ? '#d4dcec' : undefined,
+                        }}>
+                        <span dangerouslySetInnerHTML={{__html: safe(display) + fnSup}}/>
+                      </td>
+                    )
+                  })
+                  return rendered
+                })()}
               </tr>
             )
           })}
