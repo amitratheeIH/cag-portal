@@ -35,6 +35,29 @@ export function BlockRenderer({ block }: { block: ContentBlock }) {
   if (bt === 'signature_block')    return <Sig block={block} />
   if (bt === 'divider')            return <hr style={{border:'none',borderTop:'1px solid var(--rule-lt)',margin:'20px 0'}}/>
   if (bt === 'callout')            return <Callout block={block} />
+  if (item.type === 'image') {
+    const assetRef = (item as Record<string,unknown>).asset_ref as string | undefined
+    const caption  = ml_s((item as Record<string,unknown>).caption as Record<string,string>)
+    const alt      = ml_s((item as Record<string,unknown>).alt_text as Record<string,string>) || caption || 'Figure'
+    const assetPath = (assetRef && _folderPath) ? `${_folderPath}/${assetRef}`.replace(/^\//, '') : ''
+    const src = assetPath ? `/api/asset?path=${encodeURIComponent(assetPath)}` : ''
+    return (
+      <figure style={{margin:'12px 0'}}>
+        <div style={{border:'2px solid #1a3a6b',borderRadius:'6px',overflow:'hidden',background:'#f8f8f8'}}>
+          {src ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt={alt} style={{width:'100%',display:'block'}}/>
+          ) : (
+            <div style={{padding:'24px',textAlign:'center',color:'#aaa',fontFamily:'system-ui',fontSize:'12px'}}>
+              <div style={{fontSize:'24px',marginBottom:'4px'}}>🖼</div>
+              <div>{assetRef||'Image'}</div>
+            </div>
+          )}
+        </div>
+        {caption && <figcaption style={{fontSize:'12px',fontStyle:'italic',color:'#888',textAlign:'center',marginTop:'5px'}}>{caption}</figcaption>}
+      </figure>
+    )
+  }
   return null
 }
 
@@ -257,7 +280,22 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
           {loading ? '⏳ Loading table…' : dsRef ? `📊 Dataset: ${dsRef}` : '📊 No dataset reference'}
         </div>
       )}
-      {source && <div style={{fontFamily:'system-ui',fontSize:'11.5px',color:'var(--ink3)',marginTop:'0',padding:'6px 14px 12px',borderTop:'1px solid var(--rule-lt)'}}><b>Source:</b> {source}</div>}
+      {source && (
+        <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#666',padding:'6px 14px 10px',borderTop:'1px solid #e8e4dc'}}>
+          <b>Source:</b> {source}
+        </div>
+      )}
+      {/* Dataset footnotes rendered inside the card */}
+      {ds && ds.footnotes && ds.footnotes.length > 0 && (
+        <div style={{padding:'8px 14px 12px',borderTop:'1px solid #e8e4dc'}}>
+          {ds.footnotes.map((fn: {marker:string;text:Record<string,string>|string}, fi: number) => (
+            <div key={fi} style={{display:'flex',gap:'8px',marginBottom:'4px',fontSize:'12px',color:'#666',fontFamily:'system-ui'}}>
+              <span style={{color:'#8b1a1a',fontWeight:700,flexShrink:0}}>{fn.marker}</span>
+              <span>{ml_s(fn.text as Record<string,string>|string)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -346,19 +384,23 @@ function Image({ block, folderPath }: { block: ContentBlock; folderPath?: string
 
   return (
     <figure style={{margin:'24px 0'}}>
-      <div style={{border:'2px solid var(--navy)',borderRadius:'8px',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(26,58,107,.08)'}}>
+      <div style={{border:'2px solid #1a3a6b',borderRadius:'8px',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(26,58,107,.07)'}}>
         {imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={imgSrc} alt={alt} style={{width:'100%',display:'block'}} />
         ) : (
-          <div style={{padding:'28px 16px',textAlign:'center',color:'var(--ink3)',background:'var(--page)'}}>
+          <div style={{padding:'28px 16px',textAlign:'center',color:'#aaa',background:'#f9f8f6'}}>
             <div style={{fontSize:'28px',marginBottom:'6px'}}>🖼</div>
-            <div style={{fontFamily:'system-ui',fontSize:'12px'}}>{assetRef || 'Image / Figure'}</div>
-            <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',marginTop:'4px'}}>Load assets folder to display</div>
+            <div style={{fontFamily:'system-ui',fontSize:'12px',color:'#888'}}>{assetRef || 'Image / Figure'}</div>
+            <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#bbb',marginTop:'4px'}}>Asset will load when available</div>
+          </div>
+        )}
+        {caption && (
+          <div style={{borderTop:'1px solid #e8e4dc',padding:'8px 14px',fontFamily:'system-ui',fontSize:'12px',fontStyle:'italic',color:'#666',textAlign:'center',background:'#fafaf8'}}>
+            {caption}
           </div>
         )}
       </div>
-      {caption && <figcaption style={{fontSize:'13px',fontStyle:'italic',color:'var(--ink3)',textAlign:'center',marginTop:'6px'}}>{caption}</figcaption>}
     </figure>
   )
 }
@@ -369,8 +411,17 @@ function Sig({ block }: { block: ContentBlock }) {
     role?: string; name?: Record<string,string>|string
     designation?: Record<string,string>|string; date?: string; place?: Record<string,string>|string
   }>
+  // Role labels — handle both snake_case and "Label:" formats from the data
   const roleLabels: Record<string,string> = {
-    signed_by:'Signed by', countersigned_by:'Countersigned by', verified_by:'Verified by'
+    signed_by:'Signed by', countersigned_by:'Countersigned by', verified_by:'Verified by',
+    witnessed_by:'Witnessed by', approved_by:'Approved by',
+  }
+  function getRole(role?: string): string {
+    if (!role) return ''
+    // Lookup snake_case
+    if (roleLabels[role]) return roleLabels[role]
+    // Clean up "Signed By:" → "Signed By"
+    return role.replace(/:+$/, '').trim()
   }
   return (
     <div style={{margin:'24px 0',padding:'16px',border:'1px solid var(--rule)',borderRadius:'4px',background:'#fafaf8'}}>
@@ -378,7 +429,7 @@ function Sig({ block }: { block: ContentBlock }) {
         {sigs.map((s,i)=>(
           <div key={i} style={{flex:1,minWidth:'200px'}}>
             <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--ink3)',marginBottom:'6px'}}>
-              {(s.role && roleLabels[s.role]) || s.role || ''}
+              {getRole(s.role)}
             </div>
             <div style={{height:'48px',borderBottom:'1px solid var(--rule)',marginBottom:'8px'}}/>
             <div style={{fontSize:'15px',fontWeight:700}}>{ml_s(s.name)}</div>
