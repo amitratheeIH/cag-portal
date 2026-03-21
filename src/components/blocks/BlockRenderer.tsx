@@ -518,17 +518,72 @@ function DatasetTable({ ds }: { ds: DatasetJson }) {
   const thStyle: React.CSSProperties = {background:'var(--navy)',color:'#fff',padding:'8px 10px',fontSize:'12px',fontWeight:600,textAlign:'left',borderRight:'1px solid rgba(255,255,255,.15)',verticalAlign:'bottom',lineHeight:1.4}
   const tdStyle: React.CSSProperties = {padding:'7px 10px',borderBottom:'1px solid var(--rule-lt)',borderRight:'1px solid var(--rule-lt)',fontSize:'13px',color:'var(--ink)',lineHeight:1.45}
 
+  // Build thead: use header_rows if present, else fall back to flat columns row
+  interface HdrCell {
+    label?: Record<string,string>|string
+    colspan?: number
+    rowspan?: number
+    col_ids?: string[]
+    style?: string
+  }
+
+  const headerRows = ds.header_rows as HdrCell[][] | undefined
+
+  function renderThead() {
+    if (headerRows && headerRows.length > 0) {
+      // Track remaining rowspan for each col_id
+      const rowspanRemaining: Record<string, number> = {}
+      return headerRows.map((hrow, ri) => (
+        <tr key={ri}>
+          {hrow.map((cell, ci) => {
+            // Skip cells covered by a previous rowspan
+            const colId = (cell.col_ids || [])[0] || ''
+            if (colId && rowspanRemaining[colId] > 0) {
+              rowspanRemaining[colId]--
+              return null
+            }
+            const cs = cell.colspan && cell.colspan > 1 ? cell.colspan : undefined
+            const rs = cell.rowspan && cell.rowspan > 1 ? cell.rowspan : undefined
+            const isGroup = cell.style === 'group'
+            const label = ml_s(cell.label as Record<string,string>|string)
+            // Register rowspan for affected col_ids
+            if (rs && rs > 1) {
+              (cell.col_ids || []).forEach(cid => { rowspanRemaining[cid] = (rowspanRemaining[cid] || 0) + rs - 1 })
+            }
+            return (
+              <th key={ci}
+                colSpan={cs}
+                rowSpan={rs}
+                style={{
+                  ...thStyle,
+                  textAlign: isGroup ? 'center' : 'left',
+                  borderBottom: ri < headerRows.length - 1 ? '1px solid rgba(255,255,255,.2)' : undefined,
+                  whiteSpace: 'pre-line',
+                }}>
+                {label}
+              </th>
+            )
+          })}
+        </tr>
+      ))
+    }
+    // Fallback: flat column headers
+    return (
+      <tr>
+        {cols.map(col => (
+          <th key={col.id} style={{...thStyle, textAlign:(col.align||(isNum(col.data_type)?'right':'left')) as React.CSSProperties['textAlign']}}>
+            {ml_s(col.label as Record<string,string>|string)}
+          </th>
+        ))}
+      </tr>
+    )
+  }
+
   return (
     <div style={{overflowX:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
         <thead>
-          <tr>
-            {cols.map(col=>(
-              <th key={col.id} style={{...thStyle,textAlign:(col.align||(isNum(col.data_type)?'right':'left')) as React.CSSProperties['textAlign']}}>
-                {ml_s(col.label as Record<string,string>|string)}
-              </th>
-            ))}
-          </tr>
+          {renderThead()}
         </thead>
         <tbody>
           {rows.map((row, ri)=>{
