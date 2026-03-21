@@ -97,6 +97,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
   const [flatUnits, setFlatUnits] = useState<FlatUnit[]>([])
   const [chapterIdx, setChapterIdx] = useState(0)
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [tocOpen, setTocOpen] = useState(true)
   const contentRef = useRef<HTMLDivElement>(null)
 
@@ -119,18 +120,30 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
   const goTo = useCallback((idx: number, sectionId?: string) => {
     if (idx < 0 || idx >= chapters.length) return
+    const chapterChanged = idx !== chapterIdx
     setChapterIdx(idx)
-    // Scroll to top, then optionally to section
-    contentRef.current?.scrollTo({ top: 0 })
-    if (sectionId) {
-      setTimeout(() => {
-        const el = document.getElementById(`sec-${sectionId}`)
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 80)
+    setActiveSectionId(sectionId || null)
+    if (chapterChanged) {
+      // Navigating to a new chapter — scroll to top smoothly
+      contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+      if (sectionId) {
+        // After chapter renders, scroll to the section
+        setTimeout(() => {
+          const el = document.getElementById(`sec-${sectionId}`)
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 350)
+      }
+    } else if (sectionId) {
+      // Same chapter — just scroll to section
+      const el = document.getElementById(`sec-${sectionId}`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } else {
+      // Same chapter, no section — scroll to top
+      contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     }
-    const uid = chapters[idx]?.unit_id
+    const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
-  }, [chapters, productId])
+  }, [chapters, chapterIdx, productId])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -179,7 +192,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'4px 0 24px'}}>
           {flatUnits.length > 0 && (
-            <TOCPanel flatUnits={flatUnits} chapters={chapters} currentIdx={chapterIdx} onNavigate={goTo}/>
+            <TOCPanel flatUnits={flatUnits} chapters={chapters} currentIdx={chapterIdx} activeSectionId={activeSectionId} onNavigate={goTo}/>
           )}
         </div>
       </aside>
@@ -250,7 +263,27 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
   const execSum = ml(uFile.executive_summary)
   const isChap = unit.unit_type === 'chapter'
   const meta   = uFile.metadata
-  const afcCats = (meta?.audit_findings_categories||[]).slice(0, isChap?5:undefined)
+  // AFC:
+  // - Section level: read directly from section's own metadata (manually set in builder)
+  // - Chapter level: aggregate from all descendant sections, sorted by
+  //   decreasing frequency of occurrence, show top 5
+  let afcCats: string[]
+  if (isChap && sections.length > 0) {
+    const freq: Record<string, number> = {}
+    sections.forEach(sec => {
+      const secFile = unitFiles[sec.unit_id] || sec
+      const secAfc = (secFile.metadata?.audit_findings_categories || []) as string[]
+      secAfc.forEach(cat => { freq[cat] = (freq[cat] || 0) + 1 })
+    })
+    // Sort by frequency descending, then alphabetically for ties
+    afcCats = Object.entries(freq)
+      .sort(([a, fa], [b, fb]) => fb - fa || a.localeCompare(b))
+      .map(([cat]) => cat)
+      .slice(0, 5)
+  } else {
+    // Section: use own metadata directly
+    afcCats = (meta?.audit_findings_categories || []) as string[]
+  }
 
   let chNum = uFile.para_number || unit.para_number || ''
   if (!chNum && title) { const m = title.match(/Chapter\s+(\d+)/i); if (m) chNum = `Chapter ${m[1]}` }
@@ -429,9 +462,10 @@ function NavBtn({ unit, dir, onClick }: { unit:FlatUnit; dir:'prev'|'next'; onCl
 }
 
 // ── TOC ───────────────────────────────────────────────────────
-function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
+function TOCPanel({ flatUnits, chapters, currentIdx, activeSectionId, onNavigate }: {
   flatUnits: FlatUnit[]; chapters: FlatUnit[]
-  currentIdx: number; onNavigate: (i:number, sid?:string)=>void
+  currentIdx: number; activeSectionId: string | null
+  onNavigate: (i:number, sid?:string)=>void
 }) {
   const frontMatter  = chapters.filter(u=>['preface','executive_summary'].includes(u.unit_type))
   const chaptersList = chapters.filter(u=>u.unit_type==='chapter')
@@ -465,7 +499,7 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
               </button>
               {/* Sections — always visible, rendered recursively */}
               {secs.map(sec=>(
-                <TOCSectionItem key={sec.unit_id} sec={sec} flatUnits={flatUnits} idx={idx} isChapterActive={isActive} onNavigate={onNavigate} indentLevel={1}/>
+                <TOCSectionItem key={sec.unit_id} sec={sec} flatUnits={flatUnits} idx={idx} isChapterActive={isActive} activeSectionId={activeSectionId} onNavigate={onNavigate} indentLevel={1}/>
               ))}
             </div>
           )
@@ -484,24 +518,27 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
   )
 }
 
-function TOCSectionItem({ sec, flatUnits, idx, isChapterActive, onNavigate, indentLevel }: {
+function TOCSectionItem({ sec, flatUnits, idx, isChapterActive, activeSectionId, onNavigate, indentLevel }: {
   sec: FlatUnit; flatUnits: FlatUnit[]; idx: number
-  isChapterActive: boolean; onNavigate:(i:number,sid?:string)=>void; indentLevel: number
+  isChapterActive: boolean; activeSectionId: string | null
+  onNavigate:(i:number,sid?:string)=>void; indentLevel: number
 }) {
   const children = getSections(sec.unit_id, flatUnits)
   const leftPad = 16 + indentLevel * 12
   const fontSize = indentLevel === 1 ? '11px' : '10.5px'
+  const isActiveSection = activeSectionId === sec.unit_id
   return (
     <>
       <button onClick={()=>onNavigate(idx, sec.unit_id)} style={{
         width:'100%', textAlign:'left',
         display:'flex', alignItems:'baseline', gap:'5px',
         padding:`3px 16px 3px ${leftPad}px`,
-        fontFamily:'system-ui', fontSize, fontWeight:400,
+        fontFamily:'system-ui', fontSize,
+        fontWeight: isActiveSection ? 600 : 400,
         border:'none', outline:'none',
-        borderLeft:`3px solid ${isChapterActive?'#e4e0d8':'transparent'}`,
-        background:'transparent',
-        color: isChapterActive ? '#555' : '#aaa',
+        borderLeft:`3px solid ${isActiveSection?'#c47a20':isChapterActive?'#e4e0d8':'transparent'}`,
+        background: isActiveSection ? '#edf1f8' : 'transparent',
+        color: isActiveSection ? '#1a3a6b' : isChapterActive ? '#555' : '#aaa',
         cursor:'pointer', lineHeight:1.4,
       }}>
         {sec.para_number && (
@@ -512,7 +549,7 @@ function TOCSectionItem({ sec, flatUnits, idx, isChapterActive, onNavigate, inde
         </span>
       </button>
       {children.map(child=>(
-        <TOCSectionItem key={child.unit_id} sec={child} flatUnits={flatUnits} idx={idx} isChapterActive={isChapterActive} onNavigate={onNavigate} indentLevel={indentLevel+1}/>
+        <TOCSectionItem key={child.unit_id} sec={child} flatUnits={flatUnits} idx={idx} isChapterActive={isChapterActive} activeSectionId={activeSectionId} onNavigate={onNavigate} indentLevel={indentLevel+1}/>
       ))}
     </>
   )
