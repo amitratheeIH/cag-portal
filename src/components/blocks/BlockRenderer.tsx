@@ -3,9 +3,12 @@
 import { ml, type ContentBlock, type ListItem, type RichboxBodyItem } from '@/types'
 
 function safe(s: string): string {
-  return (s || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/&lt;(\\/?(strong|em|u|sup|sub|del|code|mark|br)(\\s[^>]*)?)&gt;/gi, '<$1>')
+  if (!s) return ''
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/&lt;(\/?(strong|em|u|sup|sub|del|code|mark|br)(\s[^>]*)?)&gt;/gi, '<$1>')
 }
 function ml_s(obj: Record<string,string> | string | undefined | null): string {
   if (!obj) return ''
