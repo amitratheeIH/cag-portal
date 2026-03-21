@@ -132,6 +132,16 @@ export interface ContentBlock {
   }
   annotations?: Annotation[]
   content: BlockContent
+  resolved_meta?: {
+    audit_type?: string[]
+    report_sector?: string[]
+    topics?: string[]
+    audit_findings_categories?: string[]
+    audit_period?: { start_year: number; end_year: number }
+    main_audited_entities?: unknown[]
+    dpc_act_sections?: string[]
+    examination_coverage?: { coverage_type: string }
+  }
 }
 
 export interface Annotation {
