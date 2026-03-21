@@ -94,7 +94,6 @@ export interface ContentUnit {
   slug?: string
   para_number?: string
   toc_include?: boolean
-  children?: string[]
   metadata?: {
     audit_type?: string[]
     report_sector?: string[]
