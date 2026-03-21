@@ -3,7 +3,7 @@ import { ml, type CatalogEntry } from '@/types'
 import Link from 'next/link'
 
 export const metadata = { title: 'Audit Reports' }
-export const revalidate = 3600 // re-fetch every hour
+export const dynamic = 'force-dynamic'
 
 async function getReports(): Promise<CatalogEntry[]> {
   const db = await getDb()
