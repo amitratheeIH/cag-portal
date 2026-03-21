@@ -321,10 +321,11 @@ function TocRoot({ unit, units, activeUid, activeParent, onNavigate }: {
       <button onClick={()=>onNavigate(unit.unit_id)} style={{
         width:'100%',textAlign:'left',display:'flex',alignItems:'center',gap:'8px',
         padding:'6px 16px',fontFamily:'system-ui',fontSize:'12.5px',fontWeight:600,
+        outline:'none',
         borderLeft:`2px solid ${isCurrent?'var(--saffron)':isInside?'var(--navy)':'transparent'}`,
+        borderTop:'none',borderRight:'none',borderBottom:'none',
         background:isActive?'var(--navy-lt)':'transparent',
         color:isActive?'var(--navy)':'var(--ink2)',
-        border:'none',borderLeft:`2px solid ${isCurrent?'var(--saffron)':isInside?'var(--navy)':'transparent'}`,
         cursor:'pointer',lineHeight:1.4,transition:'background .1s',
       }}>
         <span style={{flex:1,textAlign:'left',lineHeight:1.4}}>{title}</span>
@@ -341,10 +342,10 @@ function TocRoot({ unit, units, activeUid, activeParent, onNavigate }: {
             width:'100%',textAlign:'left',display:'flex',alignItems:'center',gap:'8px',
             padding:'5px 16px 5px 28px',fontFamily:'system-ui',fontSize:'11.5px',
             fontWeight:secCurrent?600:400,
+            outline:'none',borderTop:'none',borderRight:'none',borderBottom:'none',
             borderLeft:`2px solid ${secCurrent?'var(--saffron)':'transparent'}`,
             background:secCurrent?'var(--navy-lt)':'transparent',
             color:secCurrent?'var(--navy)':'var(--ink3)',
-            border:'none',borderLeft:`2px solid ${secCurrent?'var(--saffron)':'transparent'}`,
             cursor:'pointer',lineHeight:1.4,transition:'background .1s',
           }}>
             {secNum&&<span style={{color:'var(--saffron)',flexShrink:0,fontSize:'10.5px'}}>{secNum}</span>}
