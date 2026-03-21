@@ -97,3 +97,33 @@
 
 /* Smooth scroll everywhere */
 html { scroll-behavior: smooth; }
+
+/* ── Reader layout — prevent nav bar scroll-away ────────── */
+.reader-root {
+  /* Use dynamic viewport height on mobile to account for
+     browser chrome (address bar) showing/hiding */
+  height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
+}
+
+/* ── Reader TOC sidebar ──────────────────────────────────── */
+/* Desktop: inline sidebar that pushes content */
+.toc-open  { width: 268px; transition: width .2s ease; }
+.toc-closed { width: 0;    transition: width .2s ease; }
+
+/* Mobile: fixed overlay — does NOT push content */
+@media (max-width: 767px) {
+  .toc-open {
+    position: fixed !important;
+    top: 64px; bottom: 0; left: 0;
+    width: min(85vw, 320px) !important;
+    z-index: 50;
+    box-shadow: 4px 0 20px rgba(0,0,0,.18);
+  }
+  .toc-closed {
+    position: fixed !important;
+    top: 64px; bottom: 0; left: 0;
+    width: 0 !important;
+    z-index: 50;
+  }
+}
