@@ -189,11 +189,6 @@ const RICHBOX_STYLES: Record<string, { bg: string; border: string; iconBg: strin
 function RichboxBlock({ block }: { block: ContentBlock }) {
   const btype = block.content.box_type || 'note'
   const style = RICHBOX_STYLES[btype] || RICHBOX_STYLES.note
-  const titleText = ml(block.content.title)
-  // Fix 6: suppress title if it duplicates the box type label (e.g. "Executive Summary")
-  const isDupTitle = titleText && label && titleText.toLowerCase().trim() === label.toLowerCase().trim()
-  const body = block.content.body || []
-
   const labels: Record<string, string> = {
     executive_summary: 'Executive Summary',
     key_data: 'Key Data',
@@ -202,6 +197,10 @@ function RichboxBlock({ block }: { block: ContentBlock }) {
     finding: 'Finding',
   }
   const label = labels[btype] || btype.replace(/_/g, ' ')
+  const titleText = ml(block.content.title)
+  // Fix 6: suppress title if it duplicates the box type label (e.g. "Executive Summary")
+  const isDupTitle = titleText && label && titleText.toLowerCase().trim() === label.toLowerCase().trim()
+  const body = block.content.body || []
 
   return (
     <div
