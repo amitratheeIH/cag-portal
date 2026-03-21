@@ -1,33 +1,20 @@
 import { MongoClient, Db } from 'mongodb'
 
-const MONGODB_URI = process.env.MONGODB_URI!
+const MONGODB_URI = process.env.MONGODB_URI || ''
 const DB_NAME = 'cag_audit'
 
-if (!MONGODB_URI) {
-  throw new Error('MONGODB_URI environment variable is not set')
-}
+let clientPromise: Promise<MongoClient> | null = null
 
-let client: MongoClient
-let clientPromise: Promise<MongoClient>
-
-declare global {
-  var _mongoClientPromise: Promise<MongoClient> | undefined
-}
-
-if (process.env.NODE_ENV === 'development') {
-  if (!global._mongoClientPromise) {
-    client = new MongoClient(MONGODB_URI)
-    global._mongoClientPromise = client.connect()
+function getClientPromise(): Promise<MongoClient> {
+  if (!MONGODB_URI) throw new Error('MONGODB_URI environment variable is not set')
+  if (!clientPromise) {
+    const client = new MongoClient(MONGODB_URI)
+    clientPromise = client.connect()
   }
-  clientPromise = global._mongoClientPromise
-} else {
-  client = new MongoClient(MONGODB_URI)
-  clientPromise = client.connect()
+  return clientPromise
 }
 
 export async function getDb(): Promise<Db> {
-  const client = await clientPromise
+  const client = await getClientPromise()
   return client.db(DB_NAME)
 }
-
-export default clientPromise

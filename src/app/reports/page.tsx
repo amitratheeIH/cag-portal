@@ -6,20 +6,25 @@ export const metadata = { title: 'Audit Reports' }
 export const dynamic = 'force-dynamic'
 
 async function getReports(): Promise<CatalogEntry[]> {
-  const db = await getDb()
-  const docs = await db
-    .collection('catalog_index')
-    .find({})
-    .sort({ year: -1, 'report_number.number': 1 })
-    .project({
-      product_id: 1, product_type: 1, year: 1,
-      jurisdiction: 1, slug: 1, title: 1, summary: 1,
-      audit_type: 1, report_sector: 1, audit_period: 1,
-      audit_findings_categories: 1, state_ut_id: 1,
-      audit_status: 1, report_number: 1, tabling_dates: 1,
-    })
-    .toArray()
-  return docs as CatalogEntry[]
+  try {
+    const db = await getDb()
+    const docs = await db
+      .collection('catalog_index')
+      .find({})
+      .sort({ year: -1, 'report_number.number': 1 })
+      .project({
+        product_id: 1, product_type: 1, year: 1,
+        jurisdiction: 1, slug: 1, title: 1, summary: 1,
+        audit_type: 1, report_sector: 1, audit_period: 1,
+        audit_findings_categories: 1, state_ut_id: 1,
+        audit_status: 1, report_number: 1, tabling_dates: 1,
+      })
+      .toArray()
+    return docs as CatalogEntry[]
+  } catch (err) {
+    console.error('getReports error:', err)
+    return []
+  }
 }
 
 function JurisdictionBadge({ j }: { j: string }) {

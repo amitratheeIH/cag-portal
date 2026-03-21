@@ -23,7 +23,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ReportPage({ params, searchParams }: Props) {
   const db = await getDb()
 
-  const meta = await db.collection('report_meta').findOne({ product_id: params.id })
+  let meta
+  try {
+    meta = await db.collection('report_meta').findOne({ product_id: params.id })
+  } catch (err) {
+    console.error('DB error in report page:', err)
+    return (
+      <main style={{padding:'40px',textAlign:'center',fontFamily:'system-ui'}}>
+        <h1 style={{color:'#1a3a6b'}}>Database unavailable</h1>
+        <p>Please check that MONGODB_URI is set in Vercel environment variables.</p>
+      </main>
+    )
+  }
   if (!meta) notFound()
 
   const folderPath = meta.folder_path as string
