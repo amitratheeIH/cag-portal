@@ -90,10 +90,9 @@ interface ReaderData {
 export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath }: {
   productId: string; initialData: ReaderData; unitIdFromUrl?: string; folderPath?: string
 }) {
-  useMemo(() => {
-    if (folderPath) setFolderPath(folderPath)
-    if (initialData.footnotes) setFootnotes(initialData.footnotes)
-  }, [folderPath, initialData.footnotes])
+  // Set module-level state synchronously — these are plain variable assignments, not React state
+  if (folderPath) setFolderPath(folderPath)
+  if (initialData.footnotes) setFootnotes(initialData.footnotes)
 
   const [flatUnits, setFlatUnits] = useState<FlatUnit[]>([])
   const [chapterIdx, setChapterIdx] = useState(0)
@@ -194,12 +193,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('keydown', h)
   }, [chapterIdx, goTo])
 
-  if (flatUnits.length === 0) return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',fontFamily:'system-ui',color:'#999',fontSize:'13px'}}>
-      Loading…
-    </div>
-  )
-
+  // Hooks must all come before any conditional return
   const current = useMemo(() => chapters[chapterIdx], [chapters, chapterIdx])
   const sections = useMemo(() => current ? getSections(current.unit_id, flatUnits) : [], [current, flatUnits])
   const reportTitle = useMemo(() => ml(initialData.metadata?.common?.title) || productId, [initialData.metadata, productId])
@@ -207,6 +201,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const hasNext = chapterIdx < chapters.length - 1
 
   // fn/annotation indexes are updated via useEffect (below)
+
+  if (flatUnits.length === 0) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',fontFamily:'system-ui',color:'#999',fontSize:'13px'}}>
+      Loading…
+    </div>
+  )
 
   return (
     <div style={{display:'flex', height:'calc(100vh - 64px)', minHeight:'-webkit-fill-available', overflow:'hidden'}} className="reader-root">
