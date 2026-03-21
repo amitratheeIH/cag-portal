@@ -107,11 +107,12 @@ function List({ block }: { block: ContentBlock }) {
         return (
           <li key={i} style={{display:'flex',gap:'12px',marginBottom:'10px',fontSize:'16px',lineHeight:'1.72',textAlign:'justify',alignItems:'flex-start'}}>
             {isOrdered
-              ? <span style={{flexShrink:0,fontWeight:600,color:'var(--ink2)',minWidth:'20px',textAlign:'right',fontFamily:'system-ui',fontSize:'15px'}}>{i+1}.</span>
+              ? <span style={{flexShrink:0,fontWeight:600,color:'var(--ink2)',minWidth:'20px',textAlign:'right',fontFamily:'system-ui',fontSize:'15px'}}>{pnum||`${i+1}.`}</span>
               : <span style={{flexShrink:0,width:'6px',height:'6px',borderRadius:'50%',background:'var(--ink2)',marginTop:'0.55em',display:'block'}}/>
             }
             <div style={{flex:1}}>
-              {pnum && <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{pnum}</span>}
+              {isOrdered && null /* para_number shown as marker above */}
+              {!isOrdered && pnum && <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{pnum}</span>}
               <span dangerouslySetInnerHTML={{__html:safe(text)}}/>
               {subs.length > 0 && (
                 <ul style={{listStyle:'none',padding:0,margin:'6px 0 2px 18px'}}>
@@ -238,15 +239,15 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
   }, [dsRef, folderPath])
 
   return (
-    <div style={{margin:'20px 0'}}>
+    <div style={{margin:'24px 0',borderRadius:'8px',border:'2px solid var(--navy)',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(26,58,107,.08)'}}>
       {/* Caption row */}
       {(tableNum || caption) && (
-        <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'8px'}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'8px',padding:'12px 14px 0'}}>
           {tableNum && <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,background:'var(--navy)',color:'#fff',padding:'2px 7px',borderRadius:'3px'}}>Table {tableNum}</span>}
           {caption && <span style={{fontSize:'13.5px',fontWeight:600,color:'var(--ink2)'}}>{caption}</span>}
         </div>
       )}
-      {unitNote && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',marginBottom:'4px'}}>{unitNote}</div>}
+      {unitNote && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',marginBottom:'4px',padding:'0 14px'}}>{unitNote}</div>}
 
       {/* Data table or placeholder */}
       {ds ? (
@@ -256,7 +257,7 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
           {loading ? '⏳ Loading table…' : dsRef ? `📊 Dataset: ${dsRef}` : '📊 No dataset reference'}
         </div>
       )}
-      {source && <div style={{fontFamily:'system-ui',fontSize:'11.5px',color:'var(--ink3)',marginTop:'6px',paddingTop:'5px',borderTop:'1px solid var(--rule-lt)'}}><b>Source:</b> {source}</div>}
+      {source && <div style={{fontFamily:'system-ui',fontSize:'11.5px',color:'var(--ink3)',marginTop:'0',padding:'6px 14px 12px',borderTop:'1px solid var(--rule-lt)'}}><b>Source:</b> {source}</div>}
     </div>
   )
 }
@@ -285,7 +286,7 @@ function DatasetTable({ ds }: { ds: DatasetJson }) {
   const tdStyle: React.CSSProperties = {padding:'7px 10px',borderBottom:'1px solid var(--rule-lt)',borderRight:'1px solid var(--rule-lt)',fontSize:'13px',color:'var(--ink)',lineHeight:1.45}
 
   return (
-    <div style={{overflowX:'auto',border:'1px solid var(--rule)',borderRadius:'4px'}}>
+    <div style={{overflowX:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
         <thead>
           <tr>{cols.map(col=>(
@@ -344,8 +345,8 @@ function Image({ block, folderPath }: { block: ContentBlock; folderPath?: string
   }, [assetRef, folderPath])
 
   return (
-    <figure style={{margin:'20px 0'}}>
-      <div style={{border:'1px solid var(--rule)',borderRadius:'6px',overflow:'hidden',background:'#fff'}}>
+    <figure style={{margin:'24px 0'}}>
+      <div style={{border:'2px solid var(--navy)',borderRadius:'8px',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(26,58,107,.08)'}}>
         {imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={imgSrc} alt={alt} style={{width:'100%',display:'block'}} />
