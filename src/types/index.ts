@@ -88,6 +88,7 @@ export interface ContentUnit {
   unit_type: 'chapter' | 'section' | 'preface' | 'executive_summary' | 'appendix' | 'annexure'
   seq: number
   parent_id?: string | null
+  children?: string[]  // child unit_ids — written by structure.json (parent_id may be absent)
   title?: MLString
   executive_summary?: MLString
   slug?: string
@@ -240,49 +241,50 @@ export interface FlatUnit extends ContentUnit {
 }
 
 export function buildFlatUnitList(structure: ReportStructure): FlatUnit[] {
-  // Combine all units from all three sections, preserving their section group
-  // Front matter → content_units → back_matter, each group sorted by seq
+  // structure.json written by the builder uses children[] not parent_id.
+  // Algorithm:
+  //   1. Build id→unit map from all units
+  //   2. Determine which unit_ids appear as someone's child (child_set)
+  //   3. Roots = units NOT in child_set, walked in group order (fm→cu→bm), sorted by seq
+  //   4. Walk each root recursively via children[], sorted by seq, setting parent_id
+
   const groups = [
     structure.front_matter  || [],
     structure.content_units || [],
     structure.back_matter   || [],
   ]
 
-  // Build a children map from parent_id across ALL units
-  const childrenOf: Record<string, ContentUnit[]> = {}
-  const allUnits: ContentUnit[] = []
-  groups.forEach(group => group.forEach(u => allUnits.push(u)))
+  // id → unit lookup across all groups
+  const byId: Record<string, ContentUnit> = {}
+  groups.forEach(g => g.forEach(u => { byId[u.unit_id] = u }))
 
-  allUnits.forEach(u => {
-    if (u.parent_id) {
-      if (!childrenOf[u.parent_id]) childrenOf[u.parent_id] = []
-      childrenOf[u.parent_id].push(u)
-    }
-  })
-
-  // Sort each children group by seq
-  Object.keys(childrenOf).forEach(pid => {
-    childrenOf[pid].sort((a, b) => (a.seq || 0) - (b.seq || 0))
+  // Set of all unit_ids that are listed as a child of some unit
+  const childSet = new Set<string>()
+  Object.values(byId).forEach(u => {
+    (u.children || []).forEach(cid => childSet.add(cid))
   })
 
   const ordered: FlatUnit[] = []
   let index = 0
 
-  function walk(u: ContentUnit, depth: number, path: string[]) {
-    const flat: FlatUnit = { ...u, depth, index: index++, sectionPath: path }
+  function walk(u: ContentUnit, depth: number, parentId: string | null, path: string[]) {
+    // Attach parent_id dynamically so getSections() works
+    const flat: FlatUnit = { ...u, parent_id: parentId ?? undefined, depth, index: index++, sectionPath: path }
     ordered.push(flat)
-    // Recurse into children sorted by seq
-    const children = childrenOf[u.unit_id] || []
-    children.forEach(child => walk(child, depth + 1, [...path, u.unit_id]))
+    // Recurse into children[], sorted by seq
+    const childUnits = (u.children || [])
+      .map(cid => byId[cid])
+      .filter(Boolean)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+    childUnits.forEach(child => walk(child, depth + 1, u.unit_id, [...path, u.unit_id]))
   }
 
-  // Walk each group in order: front_matter → content_units → back_matter
-  // Within each group, walk only ROOT units (no parent_id) sorted by seq
+  // Walk each group in order; roots = not listed as any child, sorted by seq
   groups.forEach(group => {
-    const roots = group
-      .filter(u => !u.parent_id)
+    group
+      .filter(u => !childSet.has(u.unit_id))
       .sort((a, b) => (a.seq || 0) - (b.seq || 0))
-    roots.forEach(u => walk(u, 0, []))
+      .forEach(u => walk(u, 0, null, []))
   })
 
   return ordered
