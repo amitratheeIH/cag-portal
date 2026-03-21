@@ -286,15 +286,30 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
           <b>Source:</b> {source}
         </div>
       )}
-      {/* Dataset footnotes rendered inside the card */}
+      {/* Dataset footnotes rendered inside the card with anchor context */}
       {ds && ds.footnotes && ds.footnotes.length > 0 && (
         <div style={{padding:'8px 14px 12px',borderTop:'1px solid #e8e4dc'}}>
-          {ds.footnotes.map((fn: {marker:string;text:Record<string,string>|string}, fi: number) => (
-            <div key={fi} style={{display:'flex',gap:'8px',marginBottom:'4px',fontSize:'12px',color:'#666',fontFamily:'system-ui'}}>
-              <span style={{color:'#8b1a1a',fontWeight:700,flexShrink:0}}>{fn.marker}</span>
-              <span>{ml_s(fn.text as Record<string,string>|string)}</span>
-            </div>
-          ))}
+          {(ds.footnotes as Array<{marker:string;text:Record<string,string>|string;anchor_row_id?:string;anchor_col_id?:string}>).map((fn, fi) => {
+            const text = ml_s(fn.text as Record<string,string>|string)
+            // Build anchor label: col label if available
+            const anchorCol = fn.anchor_col_id
+              ? (ds.columns||[]).find((col: {id:string;label:Record<string,string>|string}) => col.id === fn.anchor_col_id)
+              : null
+            const anchorLabel = anchorCol ? ml_s((anchorCol as {id:string;label:Record<string,string>|string}).label as Record<string,string>|string) : fn.anchor_col_id
+            return (
+              <div key={fi} style={{display:'flex',gap:'8px',marginBottom:'5px',fontSize:'12px',fontFamily:'system-ui',lineHeight:1.5}}>
+                <span style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,minWidth:'16px'}}>{fn.marker}</span>
+                <span style={{color:'#666'}}>
+                  {anchorLabel && (
+                    <span style={{background:'#f0f4fa',color:'#1a3a6b',border:'1px solid #d0ddf0',borderRadius:'3px',padding:'0 4px',fontSize:'10.5px',marginRight:'5px',fontWeight:600}}>
+                      {anchorLabel}{fn.anchor_row_id ? ` · Row ${fn.anchor_row_id}` : ''}
+                    </span>
+                  )}
+                  {text}
+                </span>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

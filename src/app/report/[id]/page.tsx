@@ -82,6 +82,17 @@ export default async function ReportPage({ params, searchParams }: Props) {
     allBlocks[uid].sort((a, b) => (a.seq || 0) - (b.seq || 0))
   })
 
+  // Fetch footnote files — stored as footnotes/footnotes_{unit_id}.json
+  const allFootnotes: Record<string, unknown[]> = {}
+  await Promise.allSettled(
+    allUnits.map(async (u) => {
+      try {
+        const fn = await fetchJson<{footnotes: unknown[]}>(`${folderPath}/footnotes/footnotes_${u.unit_id}.json`)
+        if (fn?.footnotes?.length) allFootnotes[u.unit_id] = fn.footnotes
+      } catch { /* footnotes optional */ }
+    })
+  )
+
   return (
     <ReaderClient
       productId={params.id}
@@ -89,6 +100,7 @@ export default async function ReportPage({ params, searchParams }: Props) {
         structure,
         unitFiles,
         blocks: allBlocks,
+        footnotes: allFootnotes,
         metadata: meta.metadata as { common: { title: Record<string, string>; year: number } },
       }}
       unitIdFromUrl={searchParams.unit}

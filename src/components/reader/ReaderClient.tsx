@@ -4,26 +4,63 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
 import { BlockRenderer, setFolderPath } from '@/components/blocks/BlockRenderer'
 
+// ── Footnote types ────────────────────────────────────────────
+interface FootnoteRecord {
+  footnote_id?: string
+  marker: string
+  text?: Record<string,string> | string
+  anchor_block_id?: string
+  anchor_char_start?: number
+  anchor_char_end?: number
+  display_scope?: string
+}
+
 interface ReaderData {
   structure: ReportStructure
   unitFiles: Record<string, ContentUnit>
   blocks: Record<string, ContentBlock[]>
+  footnotes?: Record<string, unknown[]>
   metadata: { common: { title: Record<string, string>; year: number } }
 }
 
+// ── Global footnote index set once per chapter load ───────────
+let _footnotes: Record<string, FootnoteRecord[]> = {}
+export function setFootnotes(fn: Record<string, unknown[]>) {
+  _footnotes = {}
+  Object.entries(fn).forEach(([uid, list]) => {
+    _footnotes[uid] = list as FootnoteRecord[]
+  })
+}
+export function getFootnotesForUnit(uid: string): FootnoteRecord[] {
+  return _footnotes[uid] || []
+}
+export function getAllFootnotesForChapter(chapterUid: string, sectionUids: string[]): FootnoteRecord[] {
+  const all: FootnoteRecord[] = []
+  const seen = new Set<string>()
+  ;[chapterUid, ...sectionUids].forEach(uid => {
+    (_footnotes[uid] || []).forEach(fn => {
+      const key = fn.footnote_id || `${uid}-${fn.marker}`
+      if (!seen.has(key)) { seen.add(key); all.push(fn) }
+    })
+  })
+  return all.sort((a, b) => (parseInt(a.marker) || 0) - (parseInt(b.marker) || 0))
+}
+
+// ── Main component ────────────────────────────────────────────
 export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath }: {
   productId: string; initialData: ReaderData; unitIdFromUrl?: string; folderPath?: string
 }) {
-  // ── Set folderPath synchronously before children render ──────
-  // useMemo runs during render so _folderPath is ready before any child useEffect
-  useMemo(() => { if (folderPath) setFolderPath(folderPath) }, [folderPath])
+  useMemo(() => {
+    if (folderPath) setFolderPath(folderPath)
+    if (initialData.footnotes) setFootnotes(initialData.footnotes)
+  }, [folderPath, initialData.footnotes])
 
   const [flatUnits, setFlatUnits] = useState<FlatUnit[]>([])
   const [chapterIdx, setChapterIdx] = useState(0)
   const [tocOpen, setTocOpen] = useState(true)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Root-level units — one page each
+  // chapters = root-level units (one page each)
   const chapters = useMemo(() => flatUnits.filter(u => !u.parent_id), [flatUnits])
 
   useEffect(() => {
@@ -49,7 +86,6 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
   }, [chapters, productId])
 
-  // Keyboard nav
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -62,12 +98,13 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
   if (flatUnits.length === 0) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh'}}>
-      <div style={{fontFamily:'system-ui',fontSize:'13px',color:'#888'}}>Loading report…</div>
+      <div style={{fontFamily:'system-ui',fontSize:'13px',color:'#999'}}>Loading report…</div>
     </div>
   )
 
   const current = chapters[chapterIdx]
   const reportTitle = ml(initialData.metadata?.common?.title) || productId
+  // All sections belonging to current chapter
   const sections = current
     ? flatUnits.filter(u => u.parent_id === current.unit_id).sort((a,b)=>(a.seq||0)-(b.seq||0))
     : []
@@ -78,79 +115,71 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   return (
     <div style={{display:'flex', height:'calc(100vh - 64px)', overflow:'hidden'}}>
 
-      {/* ── TOC ───────────────────────────────────────── */}
+      {/* ── TOC sidebar ─────────────────────────────────── */}
       <aside style={{
         width: tocOpen ? '268px' : '0',
-        flexShrink:0, overflow:'hidden',
-        transition:'width .2s ease',
-        borderRight:'1px solid #d4d0ca',
-        background:'#f9f8f6',
+        flexShrink:0, transition:'width .2s', overflow:'hidden',
+        borderRight:'1px solid #d4d0ca', background:'#f9f8f6',
         display:'flex', flexDirection:'column',
       }}>
-        <div style={{padding:'12px 16px 8px', borderBottom:'1px solid #e8e4dc', flexShrink:0}}>
-          <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#888'}}>Contents</span>
+        <div style={{padding:'12px 16px 8px', borderBottom:'1px solid #e4e0d8', flexShrink:0}}>
+          <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#999'}}>
+            Contents
+          </span>
         </div>
         <div style={{flex:1, overflowY:'auto', padding:'4px 0 20px'}}>
-          <TOCPanel flatUnits={flatUnits} chapters={chapters} currentIdx={chapterIdx} onNavigate={goTo}/>
+          {/* TOC renders from flatUnits so sections are always visible */}
+          {flatUnits.length > 0 && (
+            <TOCPanel flatUnits={flatUnits} chapters={chapters} currentIdx={chapterIdx} onNavigate={goTo}/>
+          )}
         </div>
       </aside>
 
-      {/* ── Main column ────────────────────────────────── */}
+      {/* ── Main column ──────────────────────────────────── */}
       <div style={{flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden'}}>
 
-        {/* Top nav bar */}
+        {/* Fixed top nav bar */}
         <div style={{
-          height:'44px', flexShrink:0,
-          display:'flex', alignItems:'center', justifyContent:'space-between',
-          padding:'0 18px', borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
-          gap:'12px',
+          height:'44px', flexShrink:0, display:'flex', alignItems:'center',
+          justifyContent:'space-between', padding:'0 18px',
+          borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
         }}>
-          {/* Left: hamburger + breadcrumb */}
           <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0,flex:1}}>
             <button onClick={()=>setTocOpen(v=>!v)}
-              style={{flexShrink:0,padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#777',borderRadius:'4px'}}
-              aria-label="Toggle contents">
+              style={{padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#888',borderRadius:'4px',flexShrink:0}}>
               <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path d="M3 12h18M3 6h18M3 18h18"/>
               </svg>
             </button>
-            <span style={{fontFamily:'system-ui',fontSize:'11.5px',color:'#666',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            <span style={{fontFamily:'system-ui',fontSize:'11.5px',color:'#888',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
               {reportTitle}
             </span>
-            {current && (
-              <>
-                <span style={{color:'#bbb',flexShrink:0}}>›</span>
-                <span style={{fontFamily:'system-ui',fontSize:'11.5px',color:'#444',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flexShrink:1}}>
-                  {ml(current.title)||current.unit_id}
-                </span>
-              </>
-            )}
+            {current && <>
+              <span style={{color:'#ccc',flexShrink:0}}>›</span>
+              <span style={{fontFamily:'system-ui',fontSize:'11.5px',color:'#444',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {ml(current.title)||current.unit_id}
+              </span>
+            </>}
           </div>
-
-          {/* Right: prev/next */}
           <div style={{display:'flex',alignItems:'center',gap:'6px',flexShrink:0}}>
             <button onClick={()=>goTo(chapterIdx-1)} disabled={!hasPrev}
-              style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,
-                border:'1px solid #ccc',borderRadius:'20px',background:'white',cursor:hasPrev?'pointer':'default',
-                color:'#444',opacity:hasPrev?1:.35,transition:'all .12s',whiteSpace:'nowrap'}}>
+              style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 12px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'white',cursor:hasPrev?'pointer':'default',color:'#444',opacity:hasPrev?1:.3}}>
               <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
               Prev
             </button>
-            <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',padding:'0 2px'}}>
+            <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#bbb'}}>
               {chapterIdx+1}/{chapters.length}
             </span>
             <button onClick={()=>goTo(chapterIdx+1)} disabled={!hasNext}
-              style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,
-                border:'1px solid #ccc',borderRadius:'20px',background:'white',cursor:hasNext?'pointer':'default',
-                color:'#444',opacity:hasNext?1:.35,transition:'all .12s',whiteSpace:'nowrap'}}>
+              style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 12px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'white',cursor:hasNext?'pointer':'default',color:'#444',opacity:hasNext?1:.3}}>
               Next
               <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
             </button>
           </div>
         </div>
 
-        {/* Scrollable chapter content */}
-        <div ref={contentRef} style={{flex:1, overflowY:'auto', background:'#edeae4', position:'relative'}}>
+        {/* Scrollable content — fills remaining height */}
+        <div ref={contentRef} style={{flex:1, overflowY:'auto', background:'#edeae4'}}>
           {current && (
             <ChapterPage
               unit={current}
@@ -169,108 +198,127 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   )
 }
 
-// ── Chapter page — full chapter + all sections ────────────────
+// ── Chapter page — one chapter + ALL sections inline ──────────
 function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate, chapterIdx }: {
   unit: FlatUnit; sections: FlatUnit[]
-  unitFiles: Record<string, ContentUnit>; blocks: Record<string, ContentBlock[]>
+  unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   prev?: FlatUnit; next?: FlatUnit
-  onNavigate: (i: number) => void; chapterIdx: number
+  onNavigate:(i:number)=>void; chapterIdx:number
 }) {
-  const uid    = unit.unit_id
-  const uFile  = unitFiles[uid] || unit
-  const title  = ml(uFile.title || unit.title)
-  const execSum = ml((uFile as ContentUnit).executive_summary || (unit as ContentUnit).executive_summary)
-  const isChap = unit.unit_type === 'chapter'
-  const meta   = (uFile as ContentUnit).metadata
+  const uid     = unit.unit_id
+  const uFile   = unitFiles[uid] || unit
+  const title   = ml(uFile.title || unit.title)
+  const execSum = ml(uFile.executive_summary)
+  const isChap  = unit.unit_type === 'chapter'
+  const meta    = uFile.metadata
+  const afcCats = (meta?.audit_findings_categories || []).slice(0, isChap ? 5 : undefined)
 
   let chNum = unit.para_number || ''
   if (!chNum && title) { const m = title.match(/Chapter\s+(\d+)/i); if (m) chNum = `Chapter ${m[1]}` }
 
-  const afcCats = (meta?.audit_findings_categories || []).slice(0, isChap ? 5 : undefined)
+  // Collect all footnotes for this chapter (chapter + all sections)
+  const sectionUids = sections.map(s => s.unit_id)
+  const chapterFootnotes = getAllFootnotesForChapter(uid, sectionUids)
 
   return (
-    <div style={{maxWidth:'800px', margin:'0 auto', minHeight:'100%'}}>
-      {/* Paper */}
-      <div style={{background:'#fff', borderLeft:'1px solid #d8d4ce', borderRight:'1px solid #d8d4ce',
-                   minHeight:'100%', padding:'52px 68px 56px', boxSizing:'border-box'}}>
+    /* Outer wrapper — just padding, no scroll */
+    <div style={{padding:'0 0 40px'}}>
+      {/* White paper card */}
+      <div style={{
+        maxWidth:'800px', margin:'0 auto',
+        background:'#fff',
+        borderLeft:'1px solid #d8d4ce', borderRight:'1px solid #d8d4ce',
+        minHeight:'calc(100vh - 104px)',
+      }}>
+        <div style={{padding:'52px 68px 56px'}}>
 
-        {/* Chapter header */}
-        <div style={{borderBottom:'2.5px solid #1a3a6b', paddingBottom:'18px', marginBottom:'24px'}}>
-          {chNum && (
-            <div style={{fontFamily:'system-ui',fontSize:'10.5px',fontWeight:700,letterSpacing:'1.6px',
-                         textTransform:'uppercase',color:'#c47a20',marginBottom:'7px'}}>
-              {chNum}
-            </div>
+          {/* Chapter header */}
+          <div style={{borderBottom:'2.5px solid #1a3a6b', paddingBottom:'18px', marginBottom:'24px'}}>
+            {chNum && (
+              <div style={{fontFamily:'system-ui',fontSize:'10.5px',fontWeight:700,letterSpacing:'1.6px',textTransform:'uppercase',color:'#c47a20',marginBottom:'7px'}}>
+                {chNum}
+              </div>
+            )}
+            {title && (
+              <h1 style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'27px',fontWeight:700,color:'#1a3a6b',lineHeight:1.22,margin:0}}>
+                {title}
+              </h1>
+            )}
+            {afcCats.length > 0 && (
+              <div style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'12px'}}>
+                {afcCats.map(cat=>(
+                  <span key={cat} style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:'#edf1f8',color:'#1a3a6b',border:'1px solid #c5d5ee'}}>
+                    {cat.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Exec summary */}
+          {execSum && (
+            <p style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'15.5px',color:'#555',fontStyle:'italic',margin:'0 0 24px',paddingLeft:'16px',borderLeft:'3px solid #d8d4ce',textAlign:'justify',lineHeight:1.7}}>
+              {execSum}
+            </p>
           )}
-          {title && (
-            <h1 style={{fontFamily:'"Georgia","Times New Roman",serif',fontSize:'27px',fontWeight:700,
-                        color:'#1a3a6b',lineHeight:1.22,margin:0}}>
-              {title}
-            </h1>
+
+          {/* Chapter-level blocks */}
+          <UnitBlocks uid={uid} blocks={blocks}/>
+
+          {/* ALL sections rendered inline */}
+          {sections.map(sec => (
+            <SectionBlock key={sec.unit_id} unit={sec} unitFiles={unitFiles} blocks={blocks}/>
+          ))}
+
+          {/* Chapter footnotes — all footnotes for this chapter + sections */}
+          {chapterFootnotes.length > 0 && (
+            <FootnoteList footnotes={chapterFootnotes}/>
           )}
-          {afcCats.length > 0 && (
-            <div style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'12px'}}>
-              {afcCats.map(cat=>(
-                <span key={cat} style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:600,padding:'2px 8px',
-                                        borderRadius:'10px',background:'#edf1f8',color:'#1a3a6b',border:'1px solid #c5d5ee'}}>
-                  {cat.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
 
-        {/* Executive summary */}
-        {execSum && (
-          <p style={{fontFamily:'"Georgia","Times New Roman",serif',fontSize:'15.5px',color:'#444',
-                     fontStyle:'italic',margin:'0 0 24px',paddingLeft:'16px',borderLeft:'3px solid #d8d4ce',
-                     textAlign:'justify',lineHeight:1.7}}>
-            {execSum}
-          </p>
-        )}
+          {/* Bottom prev/next — inside the paper, full width, always visible in flow */}
+          <div style={{
+            marginTop:'48px', paddingTop:'20px',
+            borderTop:'1px solid #e4e0d8',
+            display:'flex', justifyContent:'space-between', gap:'12px',
+          }}>
+            {prev
+              ? <BottomNavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/>
+              : <div/>
+            }
+            {next
+              ? <BottomNavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/>
+              : <div/>
+            }
+          </div>
 
-        {/* Chapter-level blocks */}
-        <UnitBlocks uid={uid} blocks={blocks}/>
-
-        {/* Sections */}
-        {sections.map(sec => (
-          <SectionBlock key={sec.unit_id} unit={sec} unitFiles={unitFiles} blocks={blocks}/>
-        ))}
-
-        {/* Bottom nav — prev/next chapter */}
-        <div style={{marginTop:'52px',paddingTop:'20px',borderTop:'1px solid #e0dcd6',
-                     display:'flex',justifyContent:'space-between',gap:'12px'}}>
-          {prev ? <BottomNavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/> : <div/>}
-          {next ? <BottomNavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/> : <div/>}
         </div>
       </div>
     </div>
   )
 }
 
-// ── Section ───────────────────────────────────────────────────
+// ── Section block ─────────────────────────────────────────────
 function SectionBlock({ unit, unitFiles, blocks }: {
-  unit: FlatUnit; unitFiles: Record<string, ContentUnit>; blocks: Record<string, ContentBlock[]>
+  unit: FlatUnit; unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
 }) {
   const uid    = unit.unit_id
   const uFile  = unitFiles[uid] || unit
-  const title  = ml((uFile as ContentUnit).title || (unit as ContentUnit).title)
-  const secNum = unit.para_number || (uFile as ContentUnit).para_number || ''
-  const meta   = (uFile as ContentUnit).metadata
+  const title  = ml(uFile.title || unit.title)
+  const secNum = unit.para_number || uFile.para_number || ''
+  const meta   = uFile.metadata
   const afc    = meta?.audit_findings_categories || []
 
   return (
-    <div style={{marginTop:'40px', paddingTop:'4px'}}>
+    <div style={{marginTop:'40px'}}>
       {(secNum || title) && (
-        <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'14px',
-                     paddingBottom:'9px',borderBottom:'1px solid #e8e4dc'}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'14px',paddingBottom:'9px',borderBottom:'1px solid #e8e4dc'}}>
           {secNum && (
             <span style={{fontFamily:'system-ui',fontSize:'13px',fontWeight:700,color:'#c47a20',flexShrink:0}}>
               {secNum}
             </span>
           )}
           {title && (
-            <span style={{fontFamily:'"Georgia","Times New Roman",serif',fontSize:'20px',fontWeight:700,color:'#1a1a1a',lineHeight:1.25}}>
+            <span style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'20px',fontWeight:700,color:'#1a1a1a',lineHeight:1.25}}>
               {title}
             </span>
           )}
@@ -279,8 +327,7 @@ function SectionBlock({ unit, unitFiles, blocks }: {
       {afc.length > 0 && (
         <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'12px'}}>
           {afc.map(cat=>(
-            <span key={cat} style={{fontFamily:'system-ui',fontSize:'9.5px',fontWeight:600,padding:'2px 7px',
-                                    borderRadius:'10px',background:'#f0f4fa',color:'#1a3a6b',border:'1px solid #d0ddf0'}}>
+            <span key={cat} style={{fontFamily:'system-ui',fontSize:'9.5px',fontWeight:600,padding:'2px 7px',borderRadius:'10px',background:'#f0f4fa',color:'#1a3a6b',border:'1px solid #d0ddf0'}}>
               {cat.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())}
             </span>
           ))}
@@ -292,32 +339,54 @@ function SectionBlock({ unit, unitFiles, blocks }: {
 }
 
 // ── Unit blocks ───────────────────────────────────────────────
-function UnitBlocks({ uid, blocks }: { uid: string; blocks: Record<string, ContentBlock[]> }) {
+function UnitBlocks({ uid, blocks }: { uid:string; blocks:Record<string,ContentBlock[]> }) {
   const sorted = (blocks[uid]||[]).slice().sort((a,b)=>(a.seq||0)-(b.seq||0))
   return <>{sorted.map(b=><BlockRenderer key={b.block_id} block={b}/>)}</>
 }
 
+// ── Footnote list ─────────────────────────────────────────────
+function FootnoteList({ footnotes }: { footnotes: FootnoteRecord[] }) {
+  return (
+    <div style={{marginTop:'40px',paddingTop:'16px',borderTop:'1px solid #d8d4ce'}}>
+      <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1.2px',textTransform:'uppercase',color:'#aaa',marginBottom:'10px'}}>
+        Footnotes
+      </div>
+      {footnotes.map((fn, i) => {
+        const text = typeof fn.text === 'string' ? fn.text : (fn.text?.en || Object.values(fn.text||{})[0] || '')
+        const fnId = fn.footnote_id || `fn-${fn.marker}`
+        return (
+          <div key={i} id={fnId} style={{display:'flex',gap:'8px',marginBottom:'6px',fontSize:'13px',lineHeight:1.55}}>
+            <a href={`#ref-${fnId}`} style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'11px',marginTop:'2px',textDecoration:'none'}}>
+              {fn.marker}
+            </a>
+            <span style={{color:'#444',textAlign:'justify'}}>{text}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Bottom nav button ─────────────────────────────────────────
-function BottomNavBtn({ unit, dir, onClick }: { unit: FlatUnit; dir:'prev'|'next'; onClick:()=>void }) {
+function BottomNavBtn({ unit, dir, onClick }: { unit:FlatUnit; dir:'prev'|'next'; onClick:()=>void }) {
   const isPrev = dir === 'prev'
-  const title  = ml((unit as ContentUnit).title) || unit.unit_id
+  const title  = ml(unit.title) || unit.unit_id
   return (
     <button onClick={onClick} style={{
       display:'flex',alignItems:'center',gap:'10px',
       padding:'11px 14px',borderRadius:'8px',
       border:'1px solid #d4d0ca',background:'#f9f8f6',
       cursor:'pointer',flex:'0 1 260px',
-      transition:'border-color .12s',
     }}
     onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor='#1a3a6b'}}
     onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor='#d4d0ca'}}
     >
       {isPrev && <svg width="16" height="16" fill="none" stroke="#aaa" strokeWidth="2" viewBox="0 0 24 24" style={{flexShrink:0}}><path d="m15 18-6-6 6-6"/></svg>}
       <div style={{flex:1,minWidth:0,textAlign:isPrev?'left':'right'}}>
-        <div style={{fontFamily:'system-ui',fontSize:'9.5px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'#aaa',marginBottom:'3px'}}>
+        <div style={{fontFamily:'system-ui',fontSize:'9.5px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'#bbb',marginBottom:'3px'}}>
           {isPrev ? '← Previous' : 'Next →'}
         </div>
-        <div style={{fontFamily:'"Georgia","Times New Roman",serif',fontSize:'14px',fontWeight:600,color:'#333',lineHeight:1.3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+        <div style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'14px',fontWeight:600,color:'#333',lineHeight:1.3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
           {title}
         </div>
       </div>
@@ -326,7 +395,7 @@ function BottomNavBtn({ unit, dir, onClick }: { unit: FlatUnit; dir:'prev'|'next
   )
 }
 
-// ── TOC ───────────────────────────────────────────────────────
+// ── TOC panel ─────────────────────────────────────────────────
 function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
   flatUnits: FlatUnit[]; chapters: FlatUnit[]; currentIdx: number; onNavigate:(i:number)=>void
 }) {
@@ -334,49 +403,51 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
   const chaptersList = chapters.filter(u => u.unit_type === 'chapter')
   const backMatter   = chapters.filter(u => ['appendix','annexure'].includes(u.unit_type))
 
-  function Group({ label, items }: { label: string; items: FlatUnit[] }) {
+  function Group({ label, items }: { label:string; items:FlatUnit[] }) {
     if (!items.length) return null
     return (
       <div>
-        <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1.6px',
-                     textTransform:'uppercase',color:'#aaa',padding:'12px 16px 4px'}}>
+        <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1.6px',textTransform:'uppercase',color:'#bbb',padding:'12px 16px 4px'}}>
           {label}
         </div>
         {items.map(ch => {
           const idx = chapters.findIndex(c => c.unit_id === ch.unit_id)
           const isActive = idx === currentIdx
+          // Get sections for this chapter from flatUnits
           const secs = flatUnits.filter(u => u.parent_id === ch.unit_id).sort((a,b)=>(a.seq||0)-(b.seq||0))
           return (
             <div key={ch.unit_id}>
-              {/* Chapter */}
               <button onClick={()=>onNavigate(idx)} style={{
-                width:'100%',textAlign:'left',padding:'7px 16px',
-                fontFamily:'system-ui',fontSize:'12.5px',fontWeight:600,
-                border:'none',outline:'none',
+                width:'100%', textAlign:'left', display:'block',
+                padding:'7px 16px', fontFamily:'system-ui', fontSize:'12.5px', fontWeight:600,
+                border:'none', outline:'none',
                 borderLeft:`3px solid ${isActive?'#c47a20':'transparent'}`,
                 background:isActive?'#edf1f8':'transparent',
                 color:isActive?'#1a3a6b':'#222',
-                cursor:'pointer',display:'block',lineHeight:1.4,
+                cursor:'pointer', lineHeight:1.4,
               }}>
-                {ml((ch as ContentUnit).title)||ch.unit_id}
+                {ml(ch.title)||ch.unit_id}
               </button>
-              {/* Sections — always visible */}
+              {/* Sections — always shown, highlighted when this chapter is active */}
               {secs.map(sec => (
                 <button key={sec.unit_id} onClick={()=>onNavigate(idx)} style={{
-                  width:'100%',textAlign:'left',
+                  width:'100%', textAlign:'left',
+                  display:'flex', alignItems:'baseline', gap:'5px',
                   padding:'3px 16px 3px 24px',
-                  fontFamily:'system-ui',fontSize:'11px',fontWeight:400,
-                  border:'none',outline:'none',
-                  borderLeft:`3px solid ${isActive?'#e0dcd6':'transparent'}`,
+                  fontFamily:'system-ui', fontSize:'11px', fontWeight:400,
+                  border:'none', outline:'none',
+                  borderLeft:`3px solid ${isActive?'#e4e0d8':'transparent'}`,
                   background:'transparent',
-                  color:isActive?'#555':'#888',
-                  cursor:'pointer',display:'flex',alignItems:'baseline',gap:'5px',lineHeight:1.4,
+                  color: isActive ? '#555' : '#aaa',
+                  cursor:'pointer', lineHeight:1.4,
                 }}>
                   {sec.para_number && (
-                    <span style={{color:'#c47a20',fontSize:'10px',fontWeight:600,flexShrink:0}}>{sec.para_number}</span>
+                    <span style={{color:'#c47a20',fontSize:'10px',fontWeight:600,flexShrink:0}}>
+                      {sec.para_number}
+                    </span>
                   )}
                   <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                    {ml((sec as ContentUnit).title)||sec.unit_id}
+                    {ml(sec.title)||sec.unit_id}
                   </span>
                 </button>
               ))}
