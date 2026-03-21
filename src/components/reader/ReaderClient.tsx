@@ -105,7 +105,19 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setAnnVisible(next)
     setAnnVisibleState(next)
   }
-  const [tocOpen, setTocOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768)
+  const [isMobile, setIsMobile] = useState(false)
+  const [tocOpen, setTocOpen] = useState(true)
+
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      if (mobile) setTocOpen(false)
+    }
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
   const contentRef = useRef<HTMLDivElement>(null)
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
@@ -150,11 +162,27 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     }
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
-    // Close TOC on mobile after navigation
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+    // Close TOC on mobile after navigation (isMobile updated via resize listener)
+    if (window.innerWidth < 768) {
       setTocOpen(false)
     }
   }, [chapters, chapterIdx, productId])
+
+  // Update fn/annotation indexes when chapter changes
+  useEffect(() => {
+    const cur = chapters[chapterIdx]
+    if (!cur || flatUnits.length === 0) return
+    const allDesc = getDescendantUids(cur.unit_id, flatUnits)
+    setFnIndex(buildFnIndexForChapter(cur.unit_id, allDesc))
+    const chapterUids = [cur.unit_id, ...allDesc]
+    const annIdx: Record<string, {annotation_id:string;annotation_type:string;start:number;end:number;lang?:string;source?:string;reviewed?:boolean}[]> = {}
+    chapterUids.forEach(uid => {
+      ;(initialData.blocks[uid] || []).forEach(block => {
+        if (block.annotations?.length) annIdx[block.block_id] = block.annotations as {annotation_id:string;annotation_type:string;start:number;end:number;lang?:string;source?:string;reviewed?:boolean}[]
+      })
+    })
+    setAnnIndex(annIdx)
+  }, [chapterIdx, chapters, flatUnits, initialData.blocks])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -172,61 +200,37 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     </div>
   )
 
-  const current = chapters[chapterIdx]
-  const sections = current ? getSections(current.unit_id, flatUnits) : []
-  const reportTitle = ml(initialData.metadata?.common?.title) || productId
+  const current = useMemo(() => chapters[chapterIdx], [chapters, chapterIdx])
+  const sections = useMemo(() => current ? getSections(current.unit_id, flatUnits) : [], [current, flatUnits])
+  const reportTitle = useMemo(() => ml(initialData.metadata?.common?.title) || productId, [initialData.metadata, productId])
   const hasPrev = chapterIdx > 0
   const hasNext = chapterIdx < chapters.length - 1
 
-  // Build footnote index for BlockRenderer BEFORE rendering blocks
-  if (current) {
-    const allDesc = getDescendantUids(current.unit_id, flatUnits)
-    const fnIdx = buildFnIndexForChapter(current.unit_id, allDesc)
-    setFnIndex(fnIdx)
-
-    // Build annotation index: block_id → annotations[]
-    // Collect all blocks for current chapter + descendants
-    const chapterUids = [current.unit_id, ...allDesc]
-    const annIdx: Record<string, unknown[]> = {}
-    chapterUids.forEach(uid => {
-      const unitBlocks = initialData.blocks[uid] || []
-      unitBlocks.forEach(block => {
-        const anns = block.annotations
-        if (anns && anns.length > 0) {
-          annIdx[block.block_id] = anns
-        }
-      })
-    })
-    setAnnIndex(annIdx as Record<string, {annotation_id:string;annotation_type:string;start:number;end:number;lang?:string;source?:string;reviewed?:boolean}[]>)
-  }
+  // fn/annotation indexes are updated via useEffect (below)
 
   return (
-    <div style={{display:'flex', height:'calc(100vh - 64px)', overflow:'hidden'}}>
+    <div style={{display:'flex', height:'calc(100vh - 64px)', minHeight:'-webkit-fill-available', overflow:'hidden'}} className="reader-root">
 
       {/* ── TOC ─────────────────────────────────── */}
       {/* Overlay backdrop on mobile when TOC is open */}
-      {tocOpen && (
+      {tocOpen && isMobile && (
         <div
           onClick={()=>setTocOpen(false)}
           style={{
-            display:'none',
             position:'fixed',inset:0,background:'rgba(0,0,0,.35)',zIndex:40,
           }}
-          className="md:hidden"
         />
       )}
-      <aside style={{
-        width: tocOpen ? '268px' : '0',
-        flexShrink:0, transition:'width .25s ease', overflow:'hidden',
-        borderRight:'1px solid #d4d0ca', background:'#f9f8f6',
-        display:'flex', flexDirection:'column',
-        // On mobile, float over content as an overlay
-        position: typeof window !== 'undefined' && window.innerWidth < 768 ? 'fixed' : 'relative',
-        zIndex: typeof window !== 'undefined' && window.innerWidth < 768 ? 50 : 'auto',
-        top: typeof window !== 'undefined' && window.innerWidth < 768 ? '64px' : 'auto',
-        bottom: typeof window !== 'undefined' && window.innerWidth < 768 ? '0' : 'auto',
-        left: 0,
-      } as React.CSSProperties}>
+      <aside
+        className={tocOpen ? 'toc-open' : 'toc-closed'}
+        style={{
+          flexShrink: 0,
+          overflow: 'hidden',
+          borderRight: '1px solid #d4d0ca',
+          background: '#f9f8f6',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
         <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0}}>
           <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#999'}}>
             Contents
@@ -242,11 +246,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       {/* ── Main ────────────────────────────────── */}
       <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
 
-        {/* Nav bar */}
+        {/* Nav bar — flexShrink:0 keeps it always visible, never scrolled away */}
         <div style={{
           height:'44px', flexShrink:0, display:'flex',
           alignItems:'center', justifyContent:'space-between',
-          padding:'0 18px', borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
+          padding:'0 12px', borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
+          zIndex:10, position:'relative',
         }}>
           <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0,flex:1}}>
             <button onClick={()=>setTocOpen(v=>!v)}
@@ -292,10 +297,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         </div>
 
         {/* Content — flex:1 + overflow:auto = exactly fills remaining space */}
-        <div ref={contentRef} style={{flex:1,overflowY:'auto',background:'#edeae4',minHeight:0,scrollBehavior:'smooth'}}>
+        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,scrollBehavior:'smooth'}}>
           {current && (
             <ChapterPage
-              key={`${current.unit_id}-${annVisible}`}
+              key={current.unit_id}
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
               prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
