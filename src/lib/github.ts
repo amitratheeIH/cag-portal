@@ -19,7 +19,7 @@ async function fetchRaw(path: string): Promise<string> {
 
   const res = await fetch(url, {
     headers,
-    next: { revalidate: 3600 }, // cache 1 hour — report content rarely changes
+    cache: 'no-store' as RequestCache, // always fetch fresh — data changes on push
   })
 
   if (!res.ok) {
