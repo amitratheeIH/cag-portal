@@ -136,7 +136,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     } else if (sectionId) {
       // Same chapter — just scroll to section
       const el = document.getElementById(`sec-${sectionId}`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     } else {
       // Same chapter, no section — scroll to top
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -373,7 +373,7 @@ function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1 }: {
   const topMargin = depth === 1 ? '40px' : '28px'
 
   return (
-    <div id={`sec-${uid}`} style={{marginTop:topMargin, scrollMarginTop:'20px'}}>
+    <div id={`sec-${uid}`} style={{marginTop:topMargin, scrollMarginTop:'56px'}}>
       {(secNum || title) && (
         <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'12px',paddingBottom:'8px',borderBottom:borderStyle}}>
           {secNum && (
