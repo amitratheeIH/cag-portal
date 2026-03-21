@@ -354,5 +354,3 @@ function TocRoot({ unit, units, activeUid, activeParent, onNavigate }: {
     </div>
   )
 }
-ENDTSXEOF
-echo "ReaderClient.tsx written"
