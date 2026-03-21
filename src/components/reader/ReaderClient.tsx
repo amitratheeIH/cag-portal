@@ -398,9 +398,9 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
           {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
 
           {/* Bottom nav — inside paper, natural flow, never overflows */}
-          <div style={{marginTop:'48px',paddingTop:'20px',borderTop:'1px solid #e4e0d8',display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}>
-            {prev ? <NavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/> : <div/>}
-            {next ? <NavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/> : <div/>}
+          <div style={{marginTop:'48px',paddingTop:'20px',borderTop:'1px solid #e4e0d8',display:'flex',flexDirection:'column',gap:'10px'}} className="sm:flex-row sm:justify-between">
+            {prev ? <NavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/> : <div className="hidden sm:block"/>}
+            {next ? <NavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/> : <div className="hidden sm:block"/>}
           </div>
 
         </div>
@@ -501,7 +501,7 @@ function NavBtn({ unit, dir, onClick }: { unit:FlatUnit; dir:'prev'|'next'; onCl
     <button onClick={onClick} style={{
       display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',
       borderRadius:'8px',border:'1px solid #d4d0ca',background:'#f9f8f6',
-      cursor:'pointer',flex:'0 1 260px',
+      cursor:'pointer',width:'100%',
     }}
     onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor='#1a3a6b'}}
     onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor='#d4d0ca'}}>
@@ -510,7 +510,7 @@ function NavBtn({ unit, dir, onClick }: { unit:FlatUnit; dir:'prev'|'next'; onCl
         <div style={{fontFamily:'system-ui',fontSize:'9.5px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'#bbb',marginBottom:'3px'}}>
           {isPrev?'← Previous':'Next →'}
         </div>
-        <div style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'14px',fontWeight:600,color:'#333',lineHeight:1.3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+        <div style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'14px',fontWeight:600,color:'#333',lineHeight:1.4,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
           {ml(unit.title)||unit.unit_id}
         </div>
       </div>
