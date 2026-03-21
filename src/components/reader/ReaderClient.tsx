@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
-import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText } from '@/components/blocks/BlockRenderer'
+import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex } from '@/components/blocks/BlockRenderer'
 
 // ── Footnote types ────────────────────────────────────────────
 interface Fn {
@@ -168,11 +168,25 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const hasNext = chapterIdx < chapters.length - 1
 
   // Build footnote index for BlockRenderer BEFORE rendering blocks
-  // Use ALL descendants so footnotes in deeply nested units work
   if (current) {
     const allDesc = getDescendantUids(current.unit_id, flatUnits)
     const fnIdx = buildFnIndexForChapter(current.unit_id, allDesc)
     setFnIndex(fnIdx)
+
+    // Build annotation index: block_id → annotations[]
+    // Collect all blocks for current chapter + descendants
+    const chapterUids = [current.unit_id, ...allDesc]
+    const annIdx: Record<string, unknown[]> = {}
+    chapterUids.forEach(uid => {
+      const unitBlocks = initialData.blocks[uid] || []
+      unitBlocks.forEach(block => {
+        const anns = block.annotations
+        if (anns && anns.length > 0) {
+          annIdx[block.block_id] = anns
+        }
+      })
+    })
+    setAnnIndex(annIdx as Record<string, {annotation_id:string;annotation_type:string;start:number;end:number;lang?:string;source?:string;reviewed?:boolean}[]>)
   }
 
   return (

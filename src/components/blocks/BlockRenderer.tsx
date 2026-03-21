@@ -21,6 +21,78 @@ export function setFnIndex(idx: Record<string, unknown[]>) {
 }
 function getFnRefs(blockId: string): FnRef[] { return _fnIdx[blockId] || [] }
 
+// ── Annotation index ──────────────────────────────────────────
+interface AnnRef {
+  annotation_id: string
+  annotation_type: string
+  start: number
+  end: number
+  lang?: string
+  source?: string
+  reviewed?: boolean
+}
+let _annIdx: Record<string, AnnRef[]> = {}
+export function setAnnIndex(idx: Record<string, AnnRef[]>) { _annIdx = idx }
+function getAnns(blockId: string): AnnRef[] { return _annIdx[blockId] || [] }
+
+// Annotation styles per type
+const ANN_STYLES: Record<string, {bg:string; title:string}> = {
+  audit_observation:   { bg: 'rgba(244,121,32,0.18)', title: 'Audit Observation' },
+  scope_for_improvement: { bg: 'rgba(26,58,107,0.12)', title: 'Scope for Improvement' },
+  key_finding:         { bg: 'rgba(139,26,26,0.15)', title: 'Key Finding' },
+  legal_provision:     { bg: 'rgba(36,92,54,0.13)', title: 'Legal Provision' },
+}
+
+// Inject annotation highlights into raw HTML text
+// Multiple annotations may overlap — process as ranges, innermost wins
+function injectAnnotations(rawHtml: string, anns: AnnRef[], globalOffset: number): string {
+  if (!anns.length) return rawHtml
+  
+  // Sort by start position, then by end descending (wider spans first)
+  const sorted = [...anns]
+    .filter(a => a.end > a.start)
+    .sort((a, b) => a.start - b.start || b.end - a.end)
+  
+  if (!sorted.length) return rawHtml
+  
+  // Build a list of (charPos, isOpen, ann) events sorted by position
+  const events: Array<{pos:number; open:boolean; ann:AnnRef}> = []
+  sorted.forEach(ann => {
+    events.push({ pos: ann.start - globalOffset, open: true,  ann })
+    events.push({ pos: ann.end   - globalOffset, open: false, ann })
+  })
+  events.sort((a,b) => a.pos - b.pos || (a.open ? 1 : -1))
+  
+  // Walk raw HTML, counting stripped chars, inserting mark tags at events
+  const stripped = stripTags(rawHtml)
+  let result = ''
+  let sc = 0
+  let inTag = false
+  let evIdx = 0
+  
+  for (let i = 0; i <= rawHtml.length; i++) {
+    // Insert any events that fire at this stripped position
+    while (evIdx < events.length && events[evIdx].pos <= sc && events[evIdx].pos >= 0) {
+      const ev = events[evIdx++]
+      const style = ANN_STYLES[ev.ann.annotation_type] || { bg: 'rgba(200,200,0,0.2)', title: ev.ann.annotation_type }
+      if (ev.open) {
+        result += `<mark style="background:${style.bg};border-radius:2px;padding:0 1px" title="${style.title}">`
+      } else {
+        result += '</mark>'
+      }
+    }
+    if (i === rawHtml.length) break
+    
+    const ch = rawHtml[i]
+    if (ch === '<') inTag = true
+    if (!inTag) sc++
+    if (ch === '>') inTag = false
+    result += ch
+  }
+  
+  return result
+}
+
 // ── HTML safety ───────────────────────────────────────────────
 function safe(s: string): string {
   if (!s) return ''
@@ -158,9 +230,13 @@ function Para({ block }: { block: ContentBlock }) {
     ? `<span style="font-family:system-ui;font-size:10.5px;color:var(--ink3);margin-right:8px">${block.para_number}</span>`
     : ''
 
-  // Inject footnote sups at correct char positions
-  const fns = getFnRefs(block.block_id || '')
+  // Inject annotations first (as background), then footnote sups on top
+  const fns  = getFnRefs(block.block_id || '')
+  const anns = getAnns(block.block_id || '')
   let html = safe(rawText)
+  if (anns.length > 0) {
+    html = injectAnnotations(html, anns, 0)
+  }
   if (fns.length > 0) {
     html = injectAllSups(html, fns, 0)
   }
