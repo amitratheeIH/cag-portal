@@ -105,7 +105,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setAnnVisible(next)
     setAnnVisibleState(next)
   }
-  const [tocOpen, setTocOpen] = useState(true)
+  const [tocOpen, setTocOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
@@ -150,6 +150,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     }
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
+    // Close TOC on mobile after navigation
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setTocOpen(false)
+    }
   }, [chapters, chapterIdx, productId])
 
   useEffect(() => {
@@ -200,12 +204,29 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     <div style={{display:'flex', height:'calc(100vh - 64px)', overflow:'hidden'}}>
 
       {/* ── TOC ─────────────────────────────────── */}
+      {/* Overlay backdrop on mobile when TOC is open */}
+      {tocOpen && (
+        <div
+          onClick={()=>setTocOpen(false)}
+          style={{
+            display:'none',
+            position:'fixed',inset:0,background:'rgba(0,0,0,.35)',zIndex:40,
+          }}
+          className="md:hidden"
+        />
+      )}
       <aside style={{
         width: tocOpen ? '268px' : '0',
-        flexShrink:0, transition:'width .2s', overflow:'hidden',
+        flexShrink:0, transition:'width .25s ease', overflow:'hidden',
         borderRight:'1px solid #d4d0ca', background:'#f9f8f6',
         display:'flex', flexDirection:'column',
-      }}>
+        // On mobile, float over content as an overlay
+        position: typeof window !== 'undefined' && window.innerWidth < 768 ? 'fixed' : 'relative',
+        zIndex: typeof window !== 'undefined' && window.innerWidth < 768 ? 50 : 'auto',
+        top: typeof window !== 'undefined' && window.innerWidth < 768 ? '64px' : 'auto',
+        bottom: typeof window !== 'undefined' && window.innerWidth < 768 ? '0' : 'auto',
+        left: 0,
+      } as React.CSSProperties}>
         <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0}}>
           <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#999'}}>
             Contents
@@ -243,14 +264,14 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
                 background: annVisible ? '#fdf4e7' : 'transparent',
                 color: annVisible ? '#c47a20' : '#aaa',
               }}>
-              {annVisible ? '◉ Annotations' : '○ Annotations'}
+              {annVisible ? '◉' : '○'}<span className='hidden sm:inline'>&nbsp;Annotations</span>
             </button>
             <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
               {reportTitle}
             </span>
             {current && <>
-              <span style={{color:'#ddd',flexShrink:0}}>›</span>
-              <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#555',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+              <span style={{color:'#ddd',flexShrink:0}} className="hidden sm:inline">›</span>
+              <span className="hidden sm:inline" style={{fontFamily:'system-ui',fontSize:'11px',color:'#555',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                 {ml(current.title)||current.unit_id}
               </span>
             </>}
@@ -258,12 +279,14 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           <div style={{display:'flex',alignItems:'center',gap:'6px',flexShrink:0}}>
             <button onClick={()=>goTo(chapterIdx-1)} disabled={!hasPrev}
               style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'#fff',cursor:hasPrev?'pointer':'default',color:'#444',opacity:hasPrev?1:.3}}>
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Prev
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+              <span className="hidden sm:inline">Prev</span>
             </button>
             <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#ccc'}}>{chapterIdx+1}/{chapters.length}</span>
             <button onClick={()=>goTo(chapterIdx+1)} disabled={!hasNext}
               style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'#fff',cursor:hasNext?'pointer':'default',color:'#444',opacity:hasNext?1:.3}}>
-              Next<svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+              <span className="hidden sm:inline">Next</span>
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
             </button>
           </div>
         </div>
@@ -335,7 +358,7 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
         background:'#fff',
         borderLeft:'1px solid #d8d4ce', borderRight:'1px solid #d8d4ce',
       }}>
-        <div style={{padding:'52px 68px 56px'}}>
+        <div className="reader-paper" style={{padding:'52px 68px 56px'}}>
 
           {/* Header */}
           <div style={{borderBottom:'2.5px solid #1a3a6b',paddingBottom:'18px',marginBottom:'24px'}}>

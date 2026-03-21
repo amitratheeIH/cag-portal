@@ -56,7 +56,7 @@ export default async function ReportsPage() {
 
       {/* ── Page header ────────────────────────────────── */}
       <div className="border-b" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <p className="section-label mb-2">Repository</p>
           <h1 className="font-serif text-3xl font-bold text-navy">
             Audit Reports
@@ -68,7 +68,7 @@ export default async function ReportsPage() {
       </div>
 
       {/* ── Reports grid ───────────────────────────────── */}
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {reports.length === 0 ? (
           <div className="text-center py-20 text-cag-text3">
             <div className="text-4xl mb-4">📋</div>
@@ -103,7 +103,7 @@ function ReportCard({ report }: { report: CatalogEntry }) {
       href={`/report/${report.product_id}`}
       className="card group hover:border-navy hover:shadow-md transition-all block"
     >
-      <div className="flex flex-col md:flex-row md:items-start gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
 
         {/* Year badge */}
         <div className="flex-shrink-0 w-16 h-16 rounded-lg flex items-center justify-center

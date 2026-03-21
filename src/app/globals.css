@@ -80,3 +80,20 @@
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Mobile / responsive utilities ──────────────────────── */
+@media (max-width: 640px) {
+  /* Reader paper padding */
+  .reader-paper { padding: 28px 20px 40px !important; }
+  /* Reports grid */
+  .reports-grid { grid-template-columns: 1fr !important; }
+  /* Hide non-essential nav text */
+  .nav-label { display: none !important; }
+}
+
+@media (max-width: 768px) {
+  .reader-paper { padding: 36px 28px 48px !important; }
+}
+
+/* Smooth scroll everywhere */
+html { scroll-behavior: smooth; }
