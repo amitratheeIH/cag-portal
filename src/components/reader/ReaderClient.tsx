@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
-import { BlockRenderer, setFolderPath } from '@/components/blocks/BlockRenderer'
+import { BlockRenderer, setFolderPath, setFnIndex } from '@/components/blocks/BlockRenderer'
 
 // ── Footnote types ────────────────────────────────────────────
-interface FootnoteRecord {
+interface Fn {
   footnote_id?: string
   marker: string
   text?: Record<string,string> | string
@@ -13,17 +13,36 @@ interface FootnoteRecord {
   display_scope?: string
 }
 
-// ── Module-level state (set synchronously before render) ──────
-let _fn: Record<string, FootnoteRecord[]> = {}
-export function setFootnotes(fn: Record<string, unknown[]>) {
-  _fn = {}
-  Object.entries(fn).forEach(([uid, list]) => { _fn[uid] = list as FootnoteRecord[] })
+// ── Module-level footnote state ───────────────────────────────
+let _fnMap: Record<string, Fn[]> = {}  // uid → footnotes
+
+export function setFootnotes(raw: Record<string, unknown[]>) {
+  _fnMap = {}
+  Object.entries(raw).forEach(([uid, list]) => {
+    _fnMap[uid] = list as Fn[]
+  })
 }
-function chapterFootnotes(chapterUid: string, sectionUids: string[]): FootnoteRecord[] {
-  const all: FootnoteRecord[] = []
+
+function buildFnIndexForChapter(chapterUid: string, sectionUids: string[]): Record<string, Fn[]> {
+  // Returns: block_id → footnotes anchored to that block
+  const idx: Record<string, Fn[]> = {}
+  ;[chapterUid, ...sectionUids].forEach(uid => {
+    (_fnMap[uid] || []).forEach(fn => {
+      const bid = fn.anchor_block_id
+      if (bid) {
+        if (!idx[bid]) idx[bid] = []
+        idx[bid].push(fn)
+      }
+    })
+  })
+  return idx
+}
+
+function collectChapterFn(chapterUid: string, sectionUids: string[]): Fn[] {
+  const all: Fn[] = []
   const seen = new Set<string>()
   ;[chapterUid, ...sectionUids].forEach(uid => {
-    (_fn[uid] || []).forEach(fn => {
+    (_fnMap[uid] || []).forEach(fn => {
       const key = fn.footnote_id || `${uid}-${fn.marker}`
       if (!seen.has(key)) { seen.add(key); all.push(fn) }
     })
@@ -31,27 +50,19 @@ function chapterFootnotes(chapterUid: string, sectionUids: string[]): FootnoteRe
   return all.sort((a,b) => (parseInt(a.marker)||0) - (parseInt(b.marker)||0))
 }
 
-// ── Top-level unit types (one page each) ─────────────────────
-const TOP_TYPES = new Set(['chapter','preface','executive_summary','appendix','annexure'])
-
+// ── isTopLevel: any unit with no parent_id is a page ─────────
 function isTopLevel(u: FlatUnit): boolean {
-  return TOP_TYPES.has(u.unit_type)
+  return !u.parent_id
 }
 
-// Sections for a chapter — use parent_id if available, else positional
-function getSections(chapter: FlatUnit, flatUnits: FlatUnit[]): FlatUnit[] {
-  // Try parent_id first
-  const byParent = flatUnits.filter(u => u.parent_id === chapter.unit_id && u.unit_type === 'section')
-  if (byParent.length > 0) return byParent.sort((a,b) => (a.seq||0)-(b.seq||0))
-
-  // Fallback: units between this chapter and the next top-level unit
-  const chIdx = flatUnits.findIndex(u => u.unit_id === chapter.unit_id)
-  const nextTopIdx = flatUnits.findIndex((u, i) => i > chIdx && isTopLevel(u))
-  const end = nextTopIdx >= 0 ? nextTopIdx : flatUnits.length
-  return flatUnits.slice(chIdx + 1, end).filter(u => u.unit_type === 'section')
+// ── Sections for a chapter — parent_id only, no positional ───
+function getSections(chapterUid: string, flatUnits: FlatUnit[]): FlatUnit[] {
+  return flatUnits
+    .filter(u => u.parent_id === chapterUid)
+    .sort((a,b) => (a.seq||0) - (b.seq||0))
 }
 
-// ── ReaderData type ───────────────────────────────────────────
+// ── ReaderData ────────────────────────────────────────────────
 interface ReaderData {
   structure: ReportStructure
   unitFiles: Record<string, ContentUnit>
@@ -60,14 +71,10 @@ interface ReaderData {
   metadata: { common: { title: Record<string, string>; year: number } }
 }
 
-// ── Main component ────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────
 export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath }: {
-  productId: string
-  initialData: ReaderData
-  unitIdFromUrl?: string
-  folderPath?: string
+  productId: string; initialData: ReaderData; unitIdFromUrl?: string; folderPath?: string
 }) {
-  // Set module globals synchronously (useMemo runs during render)
   useMemo(() => {
     if (folderPath) setFolderPath(folderPath)
     if (initialData.footnotes) setFootnotes(initialData.footnotes)
@@ -78,7 +85,6 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const [tocOpen, setTocOpen] = useState(true)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Top-level units only — use unit_type, never parent_id check
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
 
   useEffect(() => {
@@ -86,29 +92,27 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setFlatUnits(units)
     const tops = units.filter(isTopLevel)
     if (unitIdFromUrl) {
-      const u = units.find(u => u.unit_id === unitIdFromUrl)
+      const u = units.find(x => x.unit_id === unitIdFromUrl)
       if (u) {
-        // If it's a section, find its chapter
-        const topUid = isTopLevel(u) ? u.unit_id : (u.parent_id || u.unit_id)
-        const ri = tops.findIndex(t => t.unit_id === topUid)
+        const rootUid = u.parent_id || u.unit_id
+        const ri = tops.findIndex(t => t.unit_id === rootUid)
         if (ri >= 0) { setChapterIdx(ri); return }
-        // Fallback positional: find chapter just before this unit
-        const uIdx = units.findIndex(x => x.unit_id === u.unit_id)
-        let ci = 0
-        tops.forEach((t, i) => {
-          const tIdx = units.findIndex(x => x.unit_id === t.unit_id)
-          if (tIdx <= uIdx) ci = i
-        })
-        setChapterIdx(ci); return
       }
     }
     setChapterIdx(0)
   }, [initialData.structure, unitIdFromUrl])
 
-  const goTo = useCallback((idx: number) => {
+  const goTo = useCallback((idx: number, sectionId?: string) => {
     if (idx < 0 || idx >= chapters.length) return
     setChapterIdx(idx)
+    // Scroll to top, then optionally to section
     contentRef.current?.scrollTo({ top: 0 })
+    if (sectionId) {
+      setTimeout(() => {
+        const el = document.getElementById(`sec-${sectionId}`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 80)
+    }
     const uid = chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
   }, [chapters, productId])
@@ -125,15 +129,21 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
   if (flatUnits.length === 0) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',fontFamily:'system-ui',color:'#999',fontSize:'13px'}}>
-      Loading report…
+      Loading…
     </div>
   )
 
-  const current    = chapters[chapterIdx]
-  const sections   = current ? getSections(current, flatUnits) : []
+  const current = chapters[chapterIdx]
+  const sections = current ? getSections(current.unit_id, flatUnits) : []
   const reportTitle = ml(initialData.metadata?.common?.title) || productId
   const hasPrev = chapterIdx > 0
   const hasNext = chapterIdx < chapters.length - 1
+
+  // Build footnote index for BlockRenderer BEFORE rendering blocks
+  if (current) {
+    const fnIdx = buildFnIndexForChapter(current.unit_id, sections.map(s=>s.unit_id))
+    setFnIndex(fnIdx)
+  }
 
   return (
     <div style={{display:'flex', height:'calc(100vh - 64px)', overflow:'hidden'}}>
@@ -141,42 +151,35 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       {/* ── TOC ─────────────────────────────────── */}
       <aside style={{
         width: tocOpen ? '268px' : '0',
-        flexShrink: 0, transition: 'width .2s', overflow: 'hidden',
-        borderRight: '1px solid #d4d0ca', background: '#f9f8f6',
-        display: 'flex', flexDirection: 'column',
+        flexShrink:0, transition:'width .2s', overflow:'hidden',
+        borderRight:'1px solid #d4d0ca', background:'#f9f8f6',
+        display:'flex', flexDirection:'column',
       }}>
-        <div style={{padding:'12px 16px 8px', borderBottom:'1px solid #e4e0d8', flexShrink:0}}>
+        <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0}}>
           <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#999'}}>
             Contents
           </span>
         </div>
-        <div style={{flex:1, overflowY:'auto', padding:'4px 0 24px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'4px 0 24px'}}>
           {flatUnits.length > 0 && (
-            <TOCPanel
-              flatUnits={flatUnits}
-              chapters={chapters}
-              currentIdx={chapterIdx}
-              onNavigate={goTo}
-            />
+            <TOCPanel flatUnits={flatUnits} chapters={chapters} currentIdx={chapterIdx} onNavigate={goTo}/>
           )}
         </div>
       </aside>
 
       {/* ── Main ────────────────────────────────── */}
-      <div style={{flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden'}}>
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
 
-        {/* Nav bar — fixed height, never scrolls */}
+        {/* Nav bar */}
         <div style={{
-          height:'44px', flexShrink:0,
-          display:'flex', alignItems:'center', justifyContent:'space-between',
+          height:'44px', flexShrink:0, display:'flex',
+          alignItems:'center', justifyContent:'space-between',
           padding:'0 18px', borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
         }}>
           <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0,flex:1}}>
             <button onClick={()=>setTocOpen(v=>!v)}
               style={{padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#888',borderRadius:'4px',flexShrink:0}}>
-              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path d="M3 12h18M3 6h18M3 18h18"/>
-              </svg>
+              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
             <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
               {reportTitle}
@@ -191,30 +194,24 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           <div style={{display:'flex',alignItems:'center',gap:'6px',flexShrink:0}}>
             <button onClick={()=>goTo(chapterIdx-1)} disabled={!hasPrev}
               style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'#fff',cursor:hasPrev?'pointer':'default',color:'#444',opacity:hasPrev?1:.3}}>
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
-              Prev
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Prev
             </button>
             <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#ccc'}}>{chapterIdx+1}/{chapters.length}</span>
             <button onClick={()=>goTo(chapterIdx+1)} disabled={!hasNext}
               style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'#fff',cursor:hasNext?'pointer':'default',color:'#444',opacity:hasNext?1:.3}}>
-              Next
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+              Next<svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
             </button>
           </div>
         </div>
 
-        {/* Scrollable chapter content */}
-        <div ref={contentRef} style={{flex:1, overflowY:'auto', background:'#edeae4'}}>
+        {/* Content — flex:1 + overflow:auto = exactly fills remaining space */}
+        <div ref={contentRef} style={{flex:1,overflowY:'auto',background:'#edeae4',minHeight:0}}>
           {current && (
             <ChapterPage
-              unit={current}
-              sections={sections}
-              unitFiles={initialData.unitFiles}
-              blocks={initialData.blocks}
-              prev={chapters[chapterIdx-1]}
-              next={chapters[chapterIdx+1]}
-              onNavigate={goTo}
-              chapterIdx={chapterIdx}
+              unit={current} sections={sections}
+              unitFiles={initialData.unitFiles} blocks={initialData.blocks}
+              prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
+              onNavigate={goTo} chapterIdx={chapterIdx}
             />
           )}
         </div>
@@ -228,35 +225,33 @@ function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate
   unit: FlatUnit; sections: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   prev?: FlatUnit; next?: FlatUnit
-  onNavigate: (i:number) => void; chapterIdx: number
+  onNavigate: (i:number, sid?:string)=>void; chapterIdx: number
 }) {
-  const uid     = unit.unit_id
-  const uFile   = unitFiles[uid] || unit
-  const title   = ml(uFile.title || unit.title)
+  const uid    = unit.unit_id
+  const uFile  = unitFiles[uid] || unit
+  const title  = ml(uFile.title || unit.title)
   const execSum = ml(uFile.executive_summary)
-  const isChap  = unit.unit_type === 'chapter'
-  const meta    = uFile.metadata
-  const afcCats = (meta?.audit_findings_categories || []).slice(0, isChap ? 5 : undefined)
+  const isChap = unit.unit_type === 'chapter'
+  const meta   = uFile.metadata
+  const afcCats = (meta?.audit_findings_categories||[]).slice(0, isChap?5:undefined)
 
   let chNum = uFile.para_number || unit.para_number || ''
   if (!chNum && title) { const m = title.match(/Chapter\s+(\d+)/i); if (m) chNum = `Chapter ${m[1]}` }
 
-  // Collect all footnotes for this chapter + all its sections
-  const sectionUids = sections.map(s => s.unit_id)
-  const fnotes = chapterFootnotes(uid, sectionUids)
+  const fnotes = collectChapterFn(uid, sections.map(s=>s.unit_id))
 
   return (
-    <div style={{padding:'0 0 40px'}}>
+    <div style={{padding:'0 0 48px'}}>
+      {/* Paper — no minHeight, just natural flow */}
       <div style={{
         maxWidth:'800px', margin:'0 auto',
         background:'#fff',
         borderLeft:'1px solid #d8d4ce', borderRight:'1px solid #d8d4ce',
-        minHeight:'calc(100vh - 108px)',
       }}>
         <div style={{padding:'52px 68px 56px'}}>
 
-          {/* Chapter header */}
-          <div style={{borderBottom:'2.5px solid #1a3a6b', paddingBottom:'18px', marginBottom:'24px'}}>
+          {/* Header */}
+          <div style={{borderBottom:'2.5px solid #1a3a6b',paddingBottom:'18px',marginBottom:'24px'}}>
             {chNum && (
               <div style={{fontFamily:'system-ui',fontSize:'10.5px',fontWeight:700,letterSpacing:'1.6px',textTransform:'uppercase',color:'#c47a20',marginBottom:'7px'}}>
                 {chNum}
@@ -278,26 +273,22 @@ function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate
             )}
           </div>
 
-          {/* Exec summary */}
           {execSum && (
             <p style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'15.5px',color:'#555',fontStyle:'italic',margin:'0 0 24px',paddingLeft:'16px',borderLeft:'3px solid #d8d4ce',textAlign:'justify',lineHeight:1.7}}>
               {execSum}
             </p>
           )}
 
-          {/* Chapter-level blocks */}
           <UnitBlocks uid={uid} blocks={blocks}/>
 
-          {/* All sections inline */}
           {sections.map(sec=>(
             <SectionBlock key={sec.unit_id} unit={sec} unitFiles={unitFiles} blocks={blocks}/>
           ))}
 
-          {/* Chapter footnotes */}
-          {fnotes.length > 0 && <FootnoteList footnotes={fnotes}/>}
+          {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
 
-          {/* Bottom prev/next — inside paper, always in reading flow */}
-          <div style={{marginTop:'48px',paddingTop:'20px',borderTop:'1px solid #e4e0d8',display:'flex',justifyContent:'space-between',gap:'12px'}}>
+          {/* Bottom nav — inside paper, natural flow, never overflows */}
+          <div style={{marginTop:'48px',paddingTop:'20px',borderTop:'1px solid #e4e0d8',display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}>
             {prev ? <NavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/> : <div/>}
             {next ? <NavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/> : <div/>}
           </div>
@@ -312,27 +303,19 @@ function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate
 function SectionBlock({ unit, unitFiles, blocks }: {
   unit: FlatUnit; unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
 }) {
-  const uid    = unit.unit_id
-  const uFile  = unitFiles[uid] || unit
-  const title  = ml(uFile.title || unit.title)
+  const uid   = unit.unit_id
+  const uFile = unitFiles[uid] || unit
+  const title = ml(uFile.title || unit.title)
   const secNum = uFile.para_number || unit.para_number || ''
-  const meta   = uFile.metadata
-  const afc    = meta?.audit_findings_categories || []
+  const meta  = uFile.metadata
+  const afc   = meta?.audit_findings_categories || []
 
   return (
-    <div style={{marginTop:'40px'}}>
+    <div id={`sec-${uid}`} style={{marginTop:'40px',scrollMarginTop:'20px'}}>
       {(secNum || title) && (
         <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'14px',paddingBottom:'9px',borderBottom:'1px solid #e8e4dc'}}>
-          {secNum && (
-            <span style={{fontFamily:'system-ui',fontSize:'13px',fontWeight:700,color:'#c47a20',flexShrink:0}}>
-              {secNum}
-            </span>
-          )}
-          {title && (
-            <span style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'20px',fontWeight:700,color:'#1a1a1a',lineHeight:1.25}}>
-              {title}
-            </span>
-          )}
+          {secNum && <span style={{fontFamily:'system-ui',fontSize:'13px',fontWeight:700,color:'#c47a20',flexShrink:0}}>{secNum}</span>}
+          {title && <span style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'20px',fontWeight:700,color:'#1a1a1a',lineHeight:1.25}}>{title}</span>}
         </div>
       )}
       {afc.length > 0 && (
@@ -349,25 +332,25 @@ function SectionBlock({ unit, unitFiles, blocks }: {
   )
 }
 
-// ── Unit blocks ───────────────────────────────────────────────
 function UnitBlocks({ uid, blocks }: { uid:string; blocks:Record<string,ContentBlock[]> }) {
   const sorted = (blocks[uid]||[]).slice().sort((a,b)=>(a.seq||0)-(b.seq||0))
   return <>{sorted.map(b=><BlockRenderer key={b.block_id} block={b}/>)}</>
 }
 
 // ── Footnote list ─────────────────────────────────────────────
-function FootnoteList({ footnotes }: { footnotes: FootnoteRecord[] }) {
+function FnList({ footnotes }: { footnotes: Fn[] }) {
   return (
     <div style={{marginTop:'40px',paddingTop:'16px',borderTop:'1px solid #d4d0ca'}}>
       <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1.2px',textTransform:'uppercase',color:'#bbb',marginBottom:'10px'}}>
         Footnotes
       </div>
-      {footnotes.map((fn, i) => {
-        const text = typeof fn.text==='string' ? fn.text : (fn.text as Record<string,string>)?.en || Object.values(fn.text||{})[0] as string || ''
-        const fnId = fn.footnote_id || `fn-${fn.marker}`
+      {footnotes.map((fn,i)=>{
+        const text = typeof fn.text==='string'?fn.text:(fn.text as Record<string,string>)?.en||Object.values(fn.text||{})[0] as string||''
+        const fnId = `fn-${fn.footnote_id||fn.marker}`
         return (
           <div key={i} id={fnId} style={{display:'flex',gap:'8px',marginBottom:'6px',fontSize:'13px',lineHeight:1.6}}>
-            <a href={`#ref-${fnId}`} style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'11px',marginTop:'2px',textDecoration:'none',minWidth:'16px'}}>
+            <a href={`#fnref-${fn.footnote_id||fn.marker}`}
+               style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'11px',marginTop:'2px',textDecoration:'none',minWidth:'16px'}}>
               {fn.marker}
             </a>
             <span style={{color:'#444',textAlign:'justify',fontFamily:'Georgia,"Times New Roman",serif'}}>{text}</span>
@@ -381,7 +364,6 @@ function FootnoteList({ footnotes }: { footnotes: FootnoteRecord[] }) {
 // ── Nav button ────────────────────────────────────────────────
 function NavBtn({ unit, dir, onClick }: { unit:FlatUnit; dir:'prev'|'next'; onClick:()=>void }) {
   const isPrev = dir==='prev'
-  const title  = ml(unit.title)||unit.unit_id
   return (
     <button onClick={onClick} style={{
       display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',
@@ -390,16 +372,16 @@ function NavBtn({ unit, dir, onClick }: { unit:FlatUnit; dir:'prev'|'next'; onCl
     }}
     onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor='#1a3a6b'}}
     onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor='#d4d0ca'}}>
-      {isPrev && <svg width="16" height="16" fill="none" stroke="#aaa" strokeWidth="2" viewBox="0 0 24 24" style={{flexShrink:0}}><path d="m15 18-6-6 6-6"/></svg>}
+      {isPrev&&<svg width="16" height="16" fill="none" stroke="#aaa" strokeWidth="2" viewBox="0 0 24 24" style={{flexShrink:0}}><path d="m15 18-6-6 6-6"/></svg>}
       <div style={{flex:1,minWidth:0,textAlign:isPrev?'left':'right'}}>
         <div style={{fontFamily:'system-ui',fontSize:'9.5px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'#bbb',marginBottom:'3px'}}>
           {isPrev?'← Previous':'Next →'}
         </div>
         <div style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'14px',fontWeight:600,color:'#333',lineHeight:1.3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-          {title}
+          {ml(unit.title)||unit.unit_id}
         </div>
       </div>
-      {!isPrev && <svg width="16" height="16" fill="none" stroke="#aaa" strokeWidth="2" viewBox="0 0 24 24" style={{flexShrink:0}}><path d="m9 18 6-6-6-6"/></svg>}
+      {!isPrev&&<svg width="16" height="16" fill="none" stroke="#aaa" strokeWidth="2" viewBox="0 0 24 24" style={{flexShrink:0}}><path d="m9 18 6-6-6-6"/></svg>}
     </button>
   )
 }
@@ -407,11 +389,13 @@ function NavBtn({ unit, dir, onClick }: { unit:FlatUnit; dir:'prev'|'next'; onCl
 // ── TOC ───────────────────────────────────────────────────────
 function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
   flatUnits: FlatUnit[]; chapters: FlatUnit[]
-  currentIdx: number; onNavigate: (i:number)=>void
+  currentIdx: number; onNavigate: (i:number, sid?:string)=>void
 }) {
-  const frontMatter  = chapters.filter(u => ['preface','executive_summary'].includes(u.unit_type))
-  const chaptersList = chapters.filter(u => u.unit_type==='chapter')
-  const backMatter   = chapters.filter(u => ['appendix','annexure'].includes(u.unit_type))
+  const frontMatter  = chapters.filter(u=>['preface','executive_summary'].includes(u.unit_type))
+  const chaptersList = chapters.filter(u=>u.unit_type==='chapter')
+  const backMatter   = chapters.filter(u=>['appendix','annexure'].includes(u.unit_type))
+  // Orphan sections — no parent_id, type=section (e.g. SEC18 signature block)
+  const orphanSecs   = chapters.filter(u=>u.unit_type==='section')
 
   function Group({ label, items }: { label:string; items:FlatUnit[] }) {
     if (!items.length) return null
@@ -420,10 +404,10 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
         <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1.6px',textTransform:'uppercase',color:'#bbb',padding:'12px 16px 4px'}}>
           {label}
         </div>
-        {items.map(ch => {
+        {items.map(ch=>{
           const idx = chapters.findIndex(c=>c.unit_id===ch.unit_id)
           const isActive = idx===currentIdx
-          const secs = getSections(ch, flatUnits)
+          const secs = getSections(ch.unit_id, flatUnits)
           return (
             <div key={ch.unit_id}>
               <button onClick={()=>onNavigate(idx)} style={{
@@ -437,23 +421,23 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
               }}>
                 {ml(ch.title)||ch.unit_id}
               </button>
-              {/* Sections — always shown */}
+              {/* Sections — always visible, click scrolls to section anchor */}
               {secs.map(sec=>(
-                <button key={sec.unit_id} onClick={()=>onNavigate(idx)} style={{
-                  width:'100%',textAlign:'left',
-                  display:'flex',alignItems:'baseline',gap:'5px',
-                  padding:'3px 16px 3px 24px',fontFamily:'system-ui',fontSize:'11px',fontWeight:400,
-                  border:'none',outline:'none',
-                  borderLeft:`3px solid ${isActive?'#e4e0d8':'transparent'}`,
-                  background:'transparent',color:isActive?'#555':'#aaa',
-                  cursor:'pointer',lineHeight:1.4,
-                }}>
-                  {sec.para_number && (
-                    <span style={{color:'#c47a20',fontSize:'10px',fontWeight:600,flexShrink:0}}>{sec.para_number}</span>
-                  )}
-                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                    {ml(sec.title)||sec.unit_id}
-                  </span>
+                <button key={sec.unit_id}
+                  onClick={()=>onNavigate(idx, sec.unit_id)}
+                  style={{
+                    width:'100%',textAlign:'left',
+                    display:'flex',alignItems:'baseline',gap:'5px',
+                    padding:'3px 16px 3px 24px',
+                    fontFamily:'system-ui',fontSize:'11px',fontWeight:400,
+                    border:'none',outline:'none',
+                    borderLeft:`3px solid ${isActive?'#e4e0d8':'transparent'}`,
+                    background:'transparent',
+                    color:isActive?'#555':'#aaa',
+                    cursor:'pointer',lineHeight:1.4,
+                  }}>
+                  {sec.para_number&&<span style={{color:'#c47a20',fontSize:'10px',fontWeight:600,flexShrink:0}}>{sec.para_number}</span>}
+                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ml(sec.title)||sec.unit_id}</span>
                 </button>
               ))}
             </div>
@@ -467,6 +451,7 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
     <>
       <Group label="Front matter" items={frontMatter}/>
       <Group label="Chapters & sections" items={chaptersList}/>
+      {orphanSecs.length>0&&<Group label="Other" items={orphanSecs}/>}
       <Group label="Back matter" items={backMatter}/>
     </>
   )

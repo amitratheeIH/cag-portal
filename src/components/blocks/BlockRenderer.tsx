@@ -7,6 +7,14 @@ import { ml, type ContentBlock, type ListItem, type RichboxBodyItem } from '@/ty
 let _folderPath = ''
 export function setFolderPath(p: string) { _folderPath = p }
 
+// Footnote index: block_id → [{marker, footnote_id}]
+interface FnRef { marker: string; footnote_id?: string }
+let _fnIdx: Record<string, FnRef[]> = {}
+export function setFnIndex(idx: Record<string, unknown[]>) {
+  _fnIdx = idx as Record<string, FnRef[]>
+}
+function getFnRefs(blockId: string): FnRef[] { return _fnIdx[blockId] || [] }
+
 function safe(s: string): string {
   if (!s) return ''
   return s
@@ -68,10 +76,20 @@ function Para({ block }: { block: ContentBlock }) {
       }}>{pt.replace(/_/g,' ')}</div>
     : null
 
+  // Footnote superscripts anchored to this block
+  const fnRefs = getFnRefs(block.block_id || '')
+  const fnSupHtml = fnRefs.map(fn => {
+    const fnId = `fn-${fn.footnote_id || fn.marker}`
+    return `<sup id="fnref-${fn.footnote_id||fn.marker}" style="color:#8b1a1a;font-size:10px;font-weight:700;cursor:pointer;vertical-align:super;line-height:0;font-family:system-ui"><a href="#${fnId}" style="color:#8b1a1a;text-decoration:none;">${fn.marker}</a></sup>`
+  }).join('')
+
   return (
     <div style={{marginBottom:'14px'}}>
       {badge}
-      <p style={style} dangerouslySetInnerHTML={{__html: (pnum ? `<span style="font-family:system-ui;font-size:10.5px;color:var(--ink3);margin-right:8px">${block.para_number}</span>` : '') + safe(text)}} />
+      <p style={style} dangerouslySetInnerHTML={{__html:
+        (pnum ? `<span style="font-family:system-ui;font-size:10.5px;color:var(--ink3);margin-right:8px">${block.para_number}</span>` : '')
+        + safe(text) + fnSupHtml
+      }} />
     </div>
   )
 }
@@ -136,11 +154,16 @@ function List({ block }: { block: ContentBlock }) {
 function Rec({ block }: { block: ContentBlock }) {
   const text = ml_s(block.content.text as Record<string,string>)
   if (!text) return null
+  const recFnRefs = getFnRefs(block.block_id || '')
+  const recFnHtml = recFnRefs.map(fn => {
+    const fnId = `fn-${fn.footnote_id || fn.marker}`
+    return `<sup style="color:#8b1a1a;font-size:10px;font-weight:700;font-family:system-ui"><a href="#${fnId}" style="color:#8b1a1a;text-decoration:none;">${fn.marker}</a></sup>`
+  }).join('')
   return (
     <div style={{margin:'16px 0',border:'1px solid #b8d4b8',borderLeft:'4px solid var(--green)',background:'var(--green-lt)',borderRadius:'0 5px 5px 0',padding:'14px 18px'}}>
       <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'var(--green)',marginBottom:'5px'}}>Recommendation</div>
       {block.para_number && <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{block.para_number}</span>}
-      <div style={{fontSize:'16px',lineHeight:'1.7',textAlign:'justify'}} dangerouslySetInnerHTML={{__html:safe(text)}}/>
+      <div style={{fontSize:'16px',lineHeight:'1.7',textAlign:'justify'}} dangerouslySetInnerHTML={{__html:safe(text)+recFnHtml}}/>
     </div>
   )
 }
