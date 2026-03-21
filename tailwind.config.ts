@@ -1,45 +1,28 @@
 import type { Config } from 'tailwindcss'
-
 const config: Config = {
-  content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
-  ],
+  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
   theme: {
     extend: {
-      colors: {
-        navy: {
-          DEFAULT: '#1A3A6B',
-          dark:    '#102548',
-          light:   '#2A5298',
-        },
-        blue:    '#0057A8',
-        saffron: {
-          DEFAULT: '#F47920',
-          light:   '#FFF3E8',
-        },
-        cag: {
-          bg:      '#F4F6FA',
-          surface: '#FFFFFF',
-          border:  '#D8E0EC',
-          text:    '#1A1A2E',
-          text2:   '#3D4B6B',
-          text3:   '#6B7A99',
-        },
-      },
       fontFamily: {
-        sans:  ['Noto Sans', 'sans-serif'],
-        serif: ['Noto Serif', 'serif'],
-        mono:  ['Noto Sans Mono', 'monospace'],
+        sans:  ['system-ui', 'sans-serif'],
+        serif: ["'EB Garamond'", "'Times New Roman'", 'Times', 'serif'],
+        mono:  ['monospace'],
+      },
+      colors: {
+        navy: { DEFAULT:'#1a3a6b', dark:'#0f2a50', light:'#edf1f8' },
+        saffron: { DEFAULT:'#c47a20', light:'#fdf4e7' },
+        cag: {
+          bg:'#f4f2ee', surface:'#faf9f7',
+          border:'#d0d0c8', text:'#1a1a1a',
+          text2:'#3a3a3a', text3:'#6b6b6b',
+        },
       },
       boxShadow: {
-        card: '0 1px 3px rgba(26,58,107,.10), 0 4px 12px rgba(26,58,107,.06)',
-        md:   '0 4px 16px rgba(26,58,107,.14)',
+        card:'0 1px 3px rgba(26,58,107,.08)',
+        md:'0 4px 16px rgba(26,58,107,.12)',
       },
     },
   },
   plugins: [],
 }
-
 export default config

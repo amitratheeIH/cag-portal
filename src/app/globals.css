@@ -1,78 +1,82 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,600;0,700;1,400&family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Noto+Sans+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ── GIGW 3.0 CSS variables ─────────────────────────── */
+/* ── Design tokens — mirrors viewer exactly ─────────────── */
 :root {
-  --navy:        #1A3A6B;
-  --navy-dark:   #102548;
-  --navy-light:  #2A5298;
-  --blue:        #0057A8;
-  --saffron:     #F47920;
-  --saffron-lt:  #FFF3E8;
-  --bg:          #F4F6FA;
-  --surface:     #FFFFFF;
-  --border:      #D8E0EC;
-  --border-lt:   #EEF2F8;
-  --text:        #1A1A2E;
-  --text-2:      #3D4B6B;
-  --text-3:      #6B7A99;
+  --ink:       #1a1a1a;
+  --ink2:      #3a3a3a;
+  --ink3:      #6b6b6b;
+  --rule:      #d0d0c8;
+  --rule-lt:   #ebebE6;
+  --page:      #faf9f7;
+  --cream:     #f4f2ee;
+  --navy:      #1a3a6b;
+  --navy-lt:   #edf1f8;
+  --saffron:   #c47a20;
+  --saffron-lt:#fdf4e7;
+  --green:     #245c36;
+  --green-lt:  #eaf2ec;
+  --red:       #8b1a1a;
+  --red-lt:    #fdf0f0;
+  --amber:     #7a4a00;
+  --amber-lt:  #fef8ec;
+  /* Tailwind compat aliases */
+  --border:    #d0d0c8;
+  --border-lt: #ebebE6;
+  --surface:   #faf9f7;
+  --bg:        #f4f2ee;
+  --text:      #1a1a1a;
+  --text-2:    #3a3a3a;
+  --text-3:    #6b6b6b;
 }
 
 @layer base {
-  html { font-family: 'Noto Sans', sans-serif; }
-  body { background: var(--bg); color: var(--text); }
+  html { font-family: 'EB Garamond','Times New Roman',Times,serif; font-size:16px; }
+  body { background: var(--cream); color: var(--ink); }
 
   /* Skip nav */
   .skip-nav {
-    position: fixed; top: -100px; left: 12px; z-index: 9999;
-    background: var(--saffron); color: #000; font-weight: 700;
-    padding: 8px 16px; border-radius: 0 0 6px 6px;
-    transition: top .2s;
+    position:fixed; top:-100px; left:12px; z-index:9999;
+    background:var(--saffron); color:#000; font-weight:700;
+    padding:8px 16px; border-radius:0 0 6px 6px; transition:top .2s;
   }
-  .skip-nav:focus { top: 0; }
-
-  /* Focus styles (GIGW) */
-  :focus-visible {
-    outline: 3px solid var(--saffron);
-    outline-offset: 2px;
-    border-radius: 2px;
-  }
+  .skip-nav:focus { top:0; }
+  :focus-visible { outline:3px solid var(--saffron); outline-offset:2px; border-radius:2px; }
 }
 
 @layer components {
-  /* ── Buttons ── */
   .btn-primary {
     @apply inline-flex items-center gap-2 px-5 py-2 rounded-full
-           bg-navy text-white font-semibold text-sm
-           hover:bg-navy-dark transition-colors;
+           font-sans font-semibold text-sm text-white transition-colors;
+    background: var(--navy);
   }
+  .btn-primary:hover { background: #0f2a50; }
+
   .btn-outline {
     @apply inline-flex items-center gap-2 px-4 py-1.5 rounded-full
-           border border-cag-border text-cag-text2 text-sm font-medium
-           hover:border-navy hover:text-navy hover:bg-blue-50 transition-colors;
+           border font-sans text-sm font-medium transition-colors;
+    border-color: var(--rule); color: var(--ink2);
   }
+  .btn-outline:hover { border-color: var(--navy); color: var(--navy); background: var(--navy-lt); }
 
-  /* ── Cards ── */
   .card {
-    @apply bg-white rounded-lg border border-cag-border shadow-card p-5;
+    background: var(--page);
+    @apply rounded-lg p-5;
+    border: 1px solid var(--rule);
+    box-shadow: 0 1px 3px rgba(26,58,107,.08);
   }
 
-  /* ── Badges ── */
-  .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full
-           text-xs font-semibold;
-  }
-  .badge-navy    { @apply bg-navy text-white; }
-  .badge-saffron { @apply bg-saffron text-white; }
-  .badge-blue    { @apply bg-blue-100 text-blue-800; }
-  .badge-green   { @apply bg-green-100 text-green-800; }
-  .badge-gray    { @apply bg-gray-100 text-gray-600; }
+  .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold font-sans; }
+  .badge-navy { @apply badge; background:var(--navy); color:#fff; }
+  .badge-saffron { @apply badge; background:var(--saffron); color:#fff; }
+  .badge-blue { @apply badge bg-blue-100 text-blue-800; }
+  .badge-green { @apply badge; background:var(--green-lt); color:var(--green); }
+  .badge-gray { @apply badge bg-gray-100 text-gray-600; }
 
-  /* ── Section label ── */
-  .section-label {
-    @apply text-xs font-bold tracking-widest uppercase text-cag-text3;
-  }
+  .section-label { @apply text-xs font-bold tracking-widest uppercase font-sans; color:var(--ink3); }
 }
+
+@keyframes spin { to { transform: rotate(360deg); } }
