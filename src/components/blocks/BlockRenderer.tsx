@@ -428,6 +428,8 @@ interface DatasetJson {
   columns: DatasetCol[]; data: DatasetRow[]
   header_rows?: unknown[]
   footnotes?: DsFn[]
+  unit?: string
+  notes?: Record<string,string> | string
 }
 
 function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string }) {
@@ -457,7 +459,8 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
           {caption && <span style={{fontSize:'13.5px',fontWeight:600,color:'var(--ink2)'}}>{caption}</span>}
         </div>
       )}
-      {unitNote && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',padding:'4px 14px 0'}}>{unitNote}</div>}
+      {ds?.unit && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',padding:'4px 14px 0'}}>({ds.unit})</div>}
+      {!ds?.unit && unitNote && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',padding:'4px 14px 0'}}>{unitNote}</div>}
 
       {ds ? (
         <DatasetTable ds={ds}/>
@@ -467,7 +470,8 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
         </div>
       )}
 
-      {source && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#666',padding:'6px 14px 10px',borderTop:'1px solid #e8e4dc'}}><b>Source:</b> {source}</div>}
+      {source && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#666',padding:'6px 14px 4px',borderTop:'1px solid #e8e4dc'}}><b>Source:</b> {source}</div>}
+      {ds?.notes && <div style={{fontFamily:'Georgia,serif',fontSize:'12.5px',color:'#555',padding:'4px 14px 10px',fontStyle:'italic',textAlign:'justify'}}>{ml_s(ds.notes as Record<string,string>|string)}</div>}
 
       {/* Dataset footnotes inside the card */}
       {ds?.footnotes && ds.footnotes.length > 0 && (
@@ -477,7 +481,7 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
             const fnId = `tbl-fn-${fi}-${fn.marker}`
             return (
               <div key={fi} id={fnId} style={{display:'flex',gap:'8px',marginBottom:'6px',fontSize:'13px',lineHeight:1.6,scrollMarginTop:'20px'}}>
-                <span style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'13px',minWidth:'16px'}}>{fn.marker}</span>
+                <span onClick={()=>{const id='cellfn-'+(fn.anchor_row_id||'')+(fn.anchor_row_id&&fn.anchor_col_id?'-':'')+fn.anchor_col_id;const el=id.length>7?document.getElementById(id):null;if(el)el.scrollIntoView({behavior:'smooth',block:'center'});}} style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'13px',minWidth:'18px',cursor:fn.anchor_row_id?'pointer':'default'}}>{fn.marker}</span>
                 <span style={{color:'#444',textAlign:'justify',display:'block',fontFamily:'Georgia,"Times New Roman",serif'}}>{text}</span>
               </div>
             )
@@ -554,8 +558,9 @@ function DatasetTable({ ds }: { ds: DatasetJson }) {
                   const fnMark = row.row_id ? fnMarkers[`${row.row_id}|${col.id}`] : undefined
                   const fnIdx2 = (ds.footnotes||[]).findIndex(f => f.marker === fnMark)
                   const fnId2 = `tbl-fn-${fnIdx2}-${fnMark}`
+                  const cellAnchorId = row.row_id ? 'cellfn-' + row.row_id + '-' + col.id : ''
                   const fnSup = fnMark
-                    ? `<sup style="color:#8b1a1a;font-size:13px;font-weight:700;font-family:system-ui;cursor:pointer"><a href="#${fnId2}" style="color:#8b1a1a;text-decoration:none">${fnMark}</a></sup>`
+                    ? '<sup' + (cellAnchorId ? ' id="' + cellAnchorId + '"' : '') + ' style="color:#8b1a1a;font-size:13px;font-weight:700;font-family:system-ui;cursor:pointer"><a href="#' + fnId2 + '" style="color:#8b1a1a;text-decoration:none">' + fnMark + '</a></sup>'
                     : ''
 
                   return (

@@ -60,10 +60,11 @@ export default async function ReportPage({ params, searchParams }: Props) {
     })
   )
 
-  // Fetch all NDJSON block files
-  const chapterUnits = allUnits.filter(u =>
-    ['chapter', 'preface', 'executive_summary', 'appendix', 'annexure'].includes(u.unit_type)
-  )
+  // Fetch NDJSON block files for all root-level units
+  // This includes chapters, preface, executive_summary, appendix, annexure,
+  // AND any section/other units that have no parent (e.g. standalone signature section)
+  const childSet = new Set(allUnits.flatMap(u => u.children || []))
+  const chapterUnits = allUnits.filter(u => !childSet.has(u.unit_id))
   const allBlocks: Record<string, ContentBlock[]> = {}
   await Promise.allSettled(
     chapterUnits.map(async (ch) => {
