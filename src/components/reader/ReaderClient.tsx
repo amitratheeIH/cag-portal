@@ -136,7 +136,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     } else if (sectionId) {
       // Same chapter — just scroll to section
       const el = document.getElementById(`sec-${sectionId}`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
     } else {
       // Same chapter, no section — scroll to top
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })

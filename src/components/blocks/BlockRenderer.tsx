@@ -43,7 +43,9 @@ function stripTags(s: string): string { return (s||'').replace(/<[^>]+>/g, '') }
 // ── Footnote superscript HTML ─────────────────────────────────
 function fnSupHtml(fn: FnRef): string {
   const fnId = `fn-${fn.footnote_id || fn.marker}`
-  return `<sup id="fnref-${fn.footnote_id||fn.marker}" style="color:#8b1a1a;font-size:13px;font-weight:700;line-height:0;font-family:system-ui;cursor:pointer" onclick="var el=document.getElementById('${fnId}');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}">${fn.marker}</sup>`
+  const tipText = (_inlineFnText[fn.footnote_id || fn.marker] || '').substring(0, 200).replace(/"/g, '&quot;')
+  const tip = tipText ? ` title="${tipText}"` : ''
+  return `<sup id="fnref-${fn.footnote_id||fn.marker}" style="color:#8b1a1a;font-size:13px;font-weight:700;line-height:0;font-family:system-ui;cursor:help"${tip} onclick="var el=document.getElementById('${fnId}');if(el){el.scrollIntoView({behavior:'smooth',block:'center'})}">${fn.marker}</sup>`
 }
 
 // ── Inject a superscript at char offset (anchor_char_end) into raw HTML text ──
@@ -383,13 +385,13 @@ function RBItem({ item, partOffsets, getFnsForPart }: {
   if (item.type === 'bullets' || item.type === 'ordered_list') {
     const isOrd = item.type === 'ordered_list'
     return (
-      <ul style={{listStyle:isOrd?'decimal':'disc',margin:'6px 0 10px 22px',fontSize:'15px'}}>
+      <ul style={{listStyle:isOrd?'decimal':'disc',margin:'6px 0 10px 22px',padding:'0 0 0 4px',fontSize:'15px'}}>
         {(item.items||[]).map((bi: {text:Record<string,string>}, j: number) => {
           const po = partOffsets.find(p => p.itemIdx === j)
           const fnsHere = po ? getFnsForPart(po.start, po.end) : []
           let html = safe(ml_s(bi.text))
           if (fnsHere.length > 0) html = injectAllSups(html, fnsHere, po!.start)
-          return <li key={j} style={{marginBottom:'4px'}} dangerouslySetInnerHTML={{__html: html}}/>
+          return <li key={j} style={{marginBottom:'6px',textAlign:'justify',lineHeight:1.7}} dangerouslySetInnerHTML={{__html: html}}/>
         })}
       </ul>
     )
