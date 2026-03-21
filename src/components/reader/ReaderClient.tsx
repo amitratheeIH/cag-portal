@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
-import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex } from '@/components/blocks/BlockRenderer'
+import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex, setAnnVisible, getAnnVisible } from '@/components/blocks/BlockRenderer'
 
 // ── Footnote types ────────────────────────────────────────────
 interface Fn {
@@ -98,6 +98,13 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const [flatUnits, setFlatUnits] = useState<FlatUnit[]>([])
   const [chapterIdx, setChapterIdx] = useState(0)
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
+  const [annVisible, setAnnVisibleState] = useState(false)
+
+  const toggleAnnotations = () => {
+    const next = !annVisible
+    setAnnVisible(next)
+    setAnnVisibleState(next)
+  }
   const [tocOpen, setTocOpen] = useState(true)
   const contentRef = useRef<HTMLDivElement>(null)
 
@@ -222,8 +229,21 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         }}>
           <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0,flex:1}}>
             <button onClick={()=>setTocOpen(v=>!v)}
-              style={{padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#888',borderRadius:'4px',flexShrink:0}}>
+              style={{padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#888',borderRadius:'4px',flexShrink:0}}
+              aria-label="Toggle contents">
               <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
+            <button onClick={toggleAnnotations}
+              title={annVisible ? 'Hide annotations' : 'Show annotations'}
+              style={{
+                padding:'3px 9px', border:'1px solid', borderRadius:'12px',
+                fontFamily:'system-ui', fontSize:'11px', fontWeight:600,
+                cursor:'pointer', flexShrink:0, transition:'all .15s',
+                borderColor: annVisible ? '#c47a20' : '#ccc',
+                background: annVisible ? '#fdf4e7' : 'transparent',
+                color: annVisible ? '#c47a20' : '#aaa',
+              }}>
+              {annVisible ? '◉ Annotations' : '○ Annotations'}
             </button>
             <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
               {reportTitle}
@@ -252,6 +272,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         <div ref={contentRef} style={{flex:1,overflowY:'auto',background:'#edeae4',minHeight:0,scrollBehavior:'smooth'}}>
           {current && (
             <ChapterPage
+              key={`${current.unit_id}-${annVisible}`}
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
               prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}

@@ -32,8 +32,14 @@ interface AnnRef {
   reviewed?: boolean
 }
 let _annIdx: Record<string, AnnRef[]> = {}
+let _annVisible = false  // off by default
 export function setAnnIndex(idx: Record<string, AnnRef[]>) { _annIdx = idx }
-function getAnns(blockId: string): AnnRef[] { return _annIdx[blockId] || [] }
+export function setAnnVisible(v: boolean) { _annVisible = v }
+export function getAnnVisible(): boolean { return _annVisible }
+function getAnns(blockId: string): AnnRef[] {
+  if (!_annVisible) return []
+  return _annIdx[blockId] || []
+}
 
 // Annotation styles per type
 const ANN_STYLES: Record<string, {bg:string; title:string}> = {
