@@ -35,29 +35,6 @@ export function BlockRenderer({ block }: { block: ContentBlock }) {
   if (bt === 'signature_block')    return <Sig block={block} />
   if (bt === 'divider')            return <hr style={{border:'none',borderTop:'1px solid var(--rule-lt)',margin:'20px 0'}}/>
   if (bt === 'callout')            return <Callout block={block} />
-  if (item.type === 'image') {
-    const assetRef = (item as Record<string,unknown>).asset_ref as string | undefined
-    const caption  = ml_s((item as Record<string,unknown>).caption as Record<string,string>)
-    const alt      = ml_s((item as Record<string,unknown>).alt_text as Record<string,string>) || caption || 'Figure'
-    const assetPath = (assetRef && _folderPath) ? `${_folderPath}/${assetRef}`.replace(/^\//, '') : ''
-    const src = assetPath ? `/api/asset?path=${encodeURIComponent(assetPath)}` : ''
-    return (
-      <figure style={{margin:'12px 0'}}>
-        <div style={{border:'2px solid #1a3a6b',borderRadius:'6px',overflow:'hidden',background:'#f8f8f8'}}>
-          {src ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={src} alt={alt} style={{width:'100%',display:'block'}}/>
-          ) : (
-            <div style={{padding:'24px',textAlign:'center',color:'#aaa',fontFamily:'system-ui',fontSize:'12px'}}>
-              <div style={{fontSize:'24px',marginBottom:'4px'}}>🖼</div>
-              <div>{assetRef||'Image'}</div>
-            </div>
-          )}
-        </div>
-        {caption && <figcaption style={{fontSize:'12px',fontStyle:'italic',color:'#888',textAlign:'center',marginTop:'5px'}}>{caption}</figcaption>}
-      </figure>
-    )
-  }
   return null
 }
 
@@ -236,6 +213,29 @@ function RBItem({ item }: { item: RichboxBodyItem }) {
           <li key={j} style={{marginBottom:'4px'}} dangerouslySetInnerHTML={{__html:safe(ml_s(bi.text))}}/>
         ))}
       </ul>
+    )
+  }
+  if (item.type === 'image') {
+    const assetRef = (item as Record<string,unknown>).asset_ref as string | undefined
+    const caption  = ml_s((item as Record<string,unknown>).caption as Record<string,string>)
+    const alt      = ml_s((item as Record<string,unknown>).alt_text as Record<string,string>) || caption || 'Figure'
+    const assetPath = (assetRef && _folderPath) ? `${_folderPath}/${assetRef}`.replace(/^\//, '') : ''
+    const src = assetPath ? `/api/asset?path=${encodeURIComponent(assetPath)}` : ''
+    return (
+      <figure style={{margin:'12px 0'}}>
+        <div style={{border:'2px solid #1a3a6b',borderRadius:'6px',overflow:'hidden',background:'#f8f8f8'}}>
+          {src ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt={alt} style={{width:'100%',display:'block'}}/>
+          ) : (
+            <div style={{padding:'24px',textAlign:'center',color:'#aaa',fontFamily:'system-ui',fontSize:'12px'}}>
+              <div style={{fontSize:'24px',marginBottom:'4px'}}>🖼</div>
+              <div>{assetRef||'Image'}</div>
+            </div>
+          )}
+        </div>
+        {caption && <figcaption style={{fontSize:'12px',fontStyle:'italic',color:'#888',textAlign:'center',marginTop:'5px'}}>{caption}</figcaption>}
+      </figure>
     )
   }
   return null
