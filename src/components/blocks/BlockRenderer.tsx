@@ -41,7 +41,7 @@ function ParagraphBlock({ block }: { block: ContentBlock }) {
   if (!text) return null
   const pt = block.content.para_type || 'normal'
 
-  const baseClass = 'text-[15px] leading-[1.8] text-cag-text mb-4'
+  const baseClass = 'text-[15px] leading-[1.8] text-cag-text mb-4 text-justify hyphens-auto'
   const variants: Record<string, string> = {
     normal: baseClass,
     finding: `${baseClass} border-l-4 pl-4 py-2 rounded-r-md`,
@@ -96,7 +96,7 @@ function ListBlock({ block }: { block: ContentBlock }) {
   const items = block.content.items || []
   if (!items.length) return null
   const listType = block.content.list_type || 'unordered'
-  const Tag = listType === 'ordered' ? 'ol' : 'ul'
+  const Tag = 'ul' // always ul; CSS counter handles ordered numbering
 
   return (
     <div className="mb-4">
@@ -190,6 +190,8 @@ function RichboxBlock({ block }: { block: ContentBlock }) {
   const btype = block.content.box_type || 'note'
   const style = RICHBOX_STYLES[btype] || RICHBOX_STYLES.note
   const titleText = ml(block.content.title)
+  // Fix 6: suppress title if it duplicates the box type label (e.g. "Executive Summary")
+  const isDupTitle = titleText && label && titleText.toLowerCase().trim() === label.toLowerCase().trim()
   const body = block.content.body || []
 
   const labels: Record<string, string> = {
