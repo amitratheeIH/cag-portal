@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
-import { BlockRenderer, setFolderPath, setFnIndex } from '@/components/blocks/BlockRenderer'
+import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText } from '@/components/blocks/BlockRenderer'
 
 // ── Footnote types ────────────────────────────────────────────
 interface Fn {
@@ -18,9 +18,18 @@ let _fnMap: Record<string, Fn[]> = {}  // uid → footnotes
 
 export function setFootnotes(raw: Record<string, unknown[]>) {
   _fnMap = {}
+  // Also build inline fn text map for richbox inline footnotes
+  const inlineTextMap: Record<string, string> = {}
   Object.entries(raw).forEach(([uid, list]) => {
     _fnMap[uid] = list as Fn[]
+    ;(list as Fn[]).forEach(fn => {
+      const key = fn.footnote_id || fn.marker
+      const text = typeof fn.text === 'string' ? fn.text
+        : (fn.text as Record<string,string>)?.en || Object.values(fn.text || {})[0] as string || ''
+      inlineTextMap[key] = text
+    })
   })
+  setInlineFnText(inlineTextMap)
 }
 
 function buildFnIndexForChapter(chapterUid: string, sectionUids: string[]): Record<string, Fn[]> {

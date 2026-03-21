@@ -1,66 +1,139 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import { ml, type ContentBlock, type ListItem, type RichboxBodyItem } from '@/types'
 
-// Set by ReaderClient before rendering blocks
+// ── Module-level state ────────────────────────────────────────
 let _folderPath = ''
 export function setFolderPath(p: string) { _folderPath = p }
 
-// Footnote index: block_id → [{marker, footnote_id}]
-interface FnRef { marker: string; footnote_id?: string }
+// Footnote index: block_id → array of footnote refs
+interface FnRef {
+  marker: string
+  footnote_id?: string
+  anchor_char_start?: number
+  anchor_char_end?: number
+  display_scope?: string
+}
 let _fnIdx: Record<string, FnRef[]> = {}
 export function setFnIndex(idx: Record<string, unknown[]>) {
   _fnIdx = idx as Record<string, FnRef[]>
 }
 function getFnRefs(blockId: string): FnRef[] { return _fnIdx[blockId] || [] }
 
+// ── HTML safety ───────────────────────────────────────────────
 function safe(s: string): string {
   if (!s) return ''
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/&lt;(\/?(strong|em|u|sup|sub|del|code|mark|br)(\s[^>]*)?)&gt;/gi, '<$1>')
+    .replace(/&lt;(\\/?(strong|em|u|sup|sub|del|code|mark|br)(\\s[^>]*)?)&gt;/gi, '<$1>')
 }
 function ml_s(obj: Record<string,string> | string | undefined | null): string {
   if (!obj) return ''
   if (typeof obj === 'string') return obj
   return (obj as Record<string,string>).en || Object.values(obj as Record<string,string>)[0] || ''
 }
-function strip(s: string): string { return (s||'').replace(/<[^>]+>/g,'') }
+function stripTags(s: string): string { return (s||'').replace(/<[^>]+>/g, '') }
+
+// ── Footnote superscript HTML ─────────────────────────────────
+function fnSupHtml(fn: FnRef): string {
+  const fnId = `fn-${fn.footnote_id || fn.marker}`
+  return `<sup id="fnref-${fn.footnote_id||fn.marker}" style="color:#8b1a1a;font-size:10px;font-weight:700;line-height:0;font-family:system-ui"><a href="#${fnId}" style="color:#8b1a1a;text-decoration:none">${fn.marker}</a></sup>`
+}
+
+// ── Inject a superscript at char offset (anchor_char_end) into raw HTML text ──
+// Offsets are into stripped text; we must walk raw HTML to find insertion point.
+function injectSupAtOffset(rawHtml: string, charEnd: number, fnRef: FnRef): string {
+  // Walk raw HTML counting only non-tag characters
+  const stripped = stripTags(rawHtml)
+  const target = Math.min(charEnd, stripped.length)
+  
+  let sc = 0
+  let inTag = false
+  for (let i = 0; i < rawHtml.length; i++) {
+    if (rawHtml[i] === '<') { inTag = true }
+    if (!inTag) {
+      sc++
+      if (sc === target) {
+        return rawHtml.slice(0, i + 1) + fnSupHtml(fnRef) + rawHtml.slice(i + 1)
+      }
+    }
+    if (rawHtml[i] === '>') { inTag = false }
+  }
+  // Fallback: append at end
+  return rawHtml + fnSupHtml(fnRef)
+}
+
+// Inject multiple footnote sups into text, processing right-to-left
+function injectAllSups(rawHtml: string, fns: FnRef[], globalOffset: number): string {
+  // Sort descending by charEnd so right-to-left injection preserves offsets
+  const sorted = [...fns].sort((a, b) => (b.anchor_char_end||0) - (a.anchor_char_end||0))
+  let result = rawHtml
+  for (const fn of sorted) {
+    const localEnd = (fn.anchor_char_end || 0) - globalOffset
+    if (localEnd > 0) {
+      result = injectSupAtOffset(result, localEnd, fn)
+    }
+  }
+  return result
+}
+
+// ── getBlockText for offset calculation ──────────────────────
+// Must match builder's getBlockText() exactly:
+// paragraph: stripped text
+// list: items joined by "\n" (stripped)
+// richbox: body items text joined by "\n" (bullets each item separately)
+function getListText(items: ListItem[]): string {
+  return items.map(item => stripTags(ml_s(item.text as Record<string,string>))).join('\n')
+}
+
+function getRichboxText(body: RichboxBodyItem[]): string {
+  const parts: string[] = []
+  for (const item of body) {
+    if (item.type === 'paragraph' || item.type === 'heading') {
+      const t = stripTags(ml_s(item.text as Record<string,string>))
+      if (t) parts.push(t)
+    } else if (item.type === 'bullets' || item.type === 'ordered_list') {
+      for (const bi of (item.items || [])) {
+        const t = stripTags(ml_s((bi as {text:Record<string,string>}).text))
+        if (t) parts.push(t)
+      }
+    }
+  }
+  return parts.join('\n')
+}
 
 // ── Dispatcher ────────────────────────────────────────────────
 export function BlockRenderer({ block }: { block: ContentBlock }) {
   const bt = block.block_type
-  if (bt === 'paragraph')          return <Para block={block} />
-  if (bt === 'heading')            return <Head block={block} />
-  if (bt === 'list')               return <List block={block} />
-  if (bt === 'recommendation')     return <Rec block={block} />
+  if (bt === 'paragraph')    return <Para block={block} />
+  if (bt === 'heading')      return <Head block={block} />
+  if (bt === 'list')         return <List block={block} />
+  if (bt === 'recommendation') return <Rec block={block} />
   if (bt === 'richbox' || bt === 'executive_summary_block') return <Richbox block={block} />
-  if (bt === 'table')              return <Table block={block} folderPath={_folderPath} />
+  if (bt === 'table')        return <Table block={block} folderPath={_folderPath} />
   if (bt === 'image' || bt === 'figure' || bt === 'map') return <Image block={block} folderPath={_folderPath} />
-  if (bt === 'signature_block')    return <Sig block={block} />
-  if (bt === 'divider')            return <hr style={{border:'none',borderTop:'1px solid var(--rule-lt)',margin:'20px 0'}}/>
-  if (bt === 'callout')            return <Callout block={block} />
+  if (bt === 'signature_block') return <Sig block={block} />
+  if (bt === 'divider')      return <hr style={{border:'none',borderTop:'1px solid var(--rule-lt)',margin:'20px 0'}}/>
+  if (bt === 'callout')      return <Callout block={block} />
+  if (bt === 'audit_finding') return <AuditFinding block={block} />
   return null
 }
 
 // ── Paragraph ─────────────────────────────────────────────────
 function Para({ block }: { block: ContentBlock }) {
-  const text = ml_s(block.content.text as Record<string,string>)
-  if (!text) return null
+  const rawText = ml_s(block.content.text as Record<string,string>)
+  if (!rawText) return null
   const pt = block.content.para_type || 'normal'
-  const pnum = block.para_number
-    ? <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{block.para_number}</span>
-    : null
 
   const base: React.CSSProperties = {
-    textAlign:'justify', hyphens:'auto', marginBottom:'14px',
-    fontSize:'16px', lineHeight:'1.75', color:'var(--ink)',
+    textAlign: 'justify', hyphens: 'auto', marginBottom: '14px',
+    fontSize: '16px', lineHeight: '1.75', color: 'var(--ink)', margin: '0',
   }
-  const styles: Record<string,React.CSSProperties> = {
-    finding:     {...base, borderLeft:'3px solid var(--red)', paddingLeft:'14px'},
+  const styles: Record<string, React.CSSProperties> = {
+    finding:     {...base, borderLeft:'3px solid var(--red)',   paddingLeft:'14px'},
     observation: {...base, borderLeft:'3px solid var(--amber)', paddingLeft:'14px'},
     conclusion:  {...base, borderLeft:'3px solid var(--green)', paddingLeft:'14px'},
     scope:       {...base, color:'var(--ink2)', fontStyle:'italic'},
@@ -76,20 +149,21 @@ function Para({ block }: { block: ContentBlock }) {
       }}>{pt.replace(/_/g,' ')}</div>
     : null
 
-  // Footnote superscripts anchored to this block
-  const fnRefs = getFnRefs(block.block_id || '')
-  const fnSupHtml = fnRefs.map(fn => {
-    const fnId = `fn-${fn.footnote_id || fn.marker}`
-    return `<sup id="fnref-${fn.footnote_id||fn.marker}" style="color:#8b1a1a;font-size:10px;font-weight:700;cursor:pointer;vertical-align:super;line-height:0;font-family:system-ui"><a href="#${fnId}" style="color:#8b1a1a;text-decoration:none;">${fn.marker}</a></sup>`
-  }).join('')
+  const pnumHtml = block.para_number
+    ? `<span style="font-family:system-ui;font-size:10.5px;color:var(--ink3);margin-right:8px">${block.para_number}</span>`
+    : ''
+
+  // Inject footnote sups at correct char positions
+  const fns = getFnRefs(block.block_id || '')
+  let html = safe(rawText)
+  if (fns.length > 0) {
+    html = injectAllSups(html, fns, 0)
+  }
 
   return (
     <div style={{marginBottom:'14px'}}>
       {badge}
-      <p style={style} dangerouslySetInnerHTML={{__html:
-        (pnum ? `<span style="font-family:system-ui;font-size:10.5px;color:var(--ink3);margin-right:8px">${block.para_number}</span>` : '')
-        + safe(text) + fnSupHtml
-      }} />
+      <p style={style} dangerouslySetInnerHTML={{__html: pnumHtml + html}} />
     </div>
   )
 }
@@ -99,45 +173,68 @@ function Head({ block }: { block: ContentBlock }) {
   const text = ml_s(block.content.text as Record<string,string>)
   if (!text) return null
   const lv = Math.min(block.content.level || 2, 4)
-  const styles: Record<number,React.CSSProperties> = {
+  const styles: Record<number, React.CSSProperties> = {
     1: {fontSize:'20px',fontWeight:700,color:'var(--navy)',margin:'24px 0 10px'},
     2: {fontSize:'17px',fontWeight:700,color:'var(--navy)',margin:'20px 0 8px'},
     3: {fontSize:'15px',fontWeight:700,color:'var(--ink)',margin:'16px 0 6px'},
     4: {fontSize:'14px',fontWeight:700,color:'var(--ink2)',margin:'12px 0 4px'},
   }
-  const Tag = `h${lv+1}` as keyof JSX.IntrinsicElements
-  return <Tag style={styles[lv]} dangerouslySetInnerHTML={{__html:safe(text)}}/>
+  const Tag = `h${lv + 1}` as keyof JSX.IntrinsicElements
+  return <Tag style={styles[lv]} dangerouslySetInnerHTML={{__html: safe(text)}}/>
 }
 
 // ── List ──────────────────────────────────────────────────────
 function List({ block }: { block: ContentBlock }) {
-  const items = block.content.items || []
+  const items = (block.content.items || []) as ListItem[]
   if (!items.length) return null
-  const lt = block.content.list_type || 'unordered'
-  const isOrdered = lt === 'ordered' || lt === 'alpha' || lt === 'roman'
+  const lt   = block.content.list_type || 'unordered'
+  const isOrd = lt === 'ordered' || lt === 'alpha' || lt === 'roman'
+  const fns  = getFnRefs(block.block_id || '')
+
+  // Build cumulative char offsets per item (builder: items joined by "\n")
+  const itemOffsets: number[] = []
+  let cum = 0
+  items.forEach(item => {
+    itemOffsets.push(cum)
+    cum += stripTags(ml_s(item.text as Record<string,string>)).length + 1
+  })
 
   return (
     <ul style={{listStyle:'none',padding:0,margin:'8px 0 16px 0'}}>
-      {items.map((item: ListItem, i: number) => {
-        const text = ml_s(item.text as Record<string,string>)
-        const pnum = item.para_number
+      {items.map((item, i) => {
+        const rawText = ml_s(item.text as Record<string,string>)
+        const itemStart = itemOffsets[i]
+        const itemEnd   = itemStart + stripTags(rawText).length
+
+        // Footnotes whose anchor falls within this item
+        const itemFns = fns.filter(fn => {
+          const end = fn.anchor_char_end || 0
+          return end > itemStart && end <= itemEnd
+        })
+
+        let html = safe(rawText)
+        if (itemFns.length > 0) {
+          html = injectAllSups(html, itemFns, itemStart)
+        }
+
         const subs = item.sub_items || []
+        const pnum = item.para_number
+
         return (
           <li key={i} style={{display:'flex',gap:'12px',marginBottom:'10px',fontSize:'16px',lineHeight:'1.72',textAlign:'justify',alignItems:'flex-start'}}>
-            {isOrdered
+            {isOrd
               ? <span style={{flexShrink:0,fontWeight:600,color:'var(--ink2)',minWidth:'20px',textAlign:'right',fontFamily:'system-ui',fontSize:'15px'}}>{pnum||`${i+1}.`}</span>
               : <span style={{flexShrink:0,width:'6px',height:'6px',borderRadius:'50%',background:'var(--ink2)',marginTop:'0.55em',display:'block'}}/>
             }
             <div style={{flex:1}}>
-              {isOrdered && null /* para_number shown as marker above */}
-              {!isOrdered && pnum && <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{pnum}</span>}
-              <span dangerouslySetInnerHTML={{__html:safe(text)}}/>
+              {!isOrd && pnum && <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{pnum}</span>}
+              <span dangerouslySetInnerHTML={{__html: html}}/>
               {subs.length > 0 && (
                 <ul style={{listStyle:'none',padding:0,margin:'6px 0 2px 18px'}}>
                   {subs.map((s: {text: Record<string,string>}, j: number) => (
                     <li key={j} style={{display:'flex',gap:'10px',fontSize:'14.5px',lineHeight:'1.65',marginBottom:'5px',color:'var(--ink2)'}}>
                       <span style={{color:'var(--ink3)',flexShrink:0}}>–</span>
-                      <span dangerouslySetInnerHTML={{__html:safe(ml_s(s.text))}}/>
+                      <span dangerouslySetInnerHTML={{__html: safe(ml_s(s.text))}}/>
                     </li>
                   ))}
                 </ul>
@@ -152,32 +249,17 @@ function List({ block }: { block: ContentBlock }) {
 
 // ── Recommendation ────────────────────────────────────────────
 function Rec({ block }: { block: ContentBlock }) {
-  const text = ml_s(block.content.text as Record<string,string>)
-  if (!text) return null
-  const recFnRefs = getFnRefs(block.block_id || '')
-  const recFnHtml = recFnRefs.map(fn => {
-    const fnId = `fn-${fn.footnote_id || fn.marker}`
-    return `<sup style="color:#8b1a1a;font-size:10px;font-weight:700;font-family:system-ui"><a href="#${fnId}" style="color:#8b1a1a;text-decoration:none;">${fn.marker}</a></sup>`
-  }).join('')
+  const rawText = ml_s(block.content.text as Record<string,string>)
+  if (!rawText) return null
+  const fns = getFnRefs(block.block_id || '')
+  let html = safe(rawText)
+  if (fns.length > 0) html = injectAllSups(html, fns, 0)
+
   return (
     <div style={{margin:'16px 0',border:'1px solid #b8d4b8',borderLeft:'4px solid var(--green)',background:'var(--green-lt)',borderRadius:'0 5px 5px 0',padding:'14px 18px'}}>
       <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'var(--green)',marginBottom:'5px'}}>Recommendation</div>
       {block.para_number && <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{block.para_number}</span>}
-      <div style={{fontSize:'16px',lineHeight:'1.7',textAlign:'justify'}} dangerouslySetInnerHTML={{__html:safe(text)+recFnHtml}}/>
-    </div>
-  )
-}
-
-// ── Callout ───────────────────────────────────────────────────
-function Callout({ block }: { block: ContentBlock }) {
-  const ct = (block.content as Record<string,unknown>).callout_type as string || 'note'
-  const title = ml_s((block.content as Record<string,unknown>).title as Record<string,string>)
-  const text = ml_s(block.content.text as Record<string,string>)
-  return (
-    <div style={{borderLeft:'4px solid var(--navy)',background:'var(--navy-lt)',padding:'10px 16px',margin:'14px 0',borderRadius:'0 4px 4px 0'}}>
-      <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--navy)',marginBottom:'4px'}}>{ct.replace(/_/g,' ')}</div>
-      {title && <div style={{fontWeight:700,marginBottom:'4px'}} dangerouslySetInnerHTML={{__html:safe(title)}}/>}
-      <div dangerouslySetInnerHTML={{__html:safe(text)}}/>
+      <div style={{fontSize:'16px',lineHeight:'1.7',textAlign:'justify'}} dangerouslySetInnerHTML={{__html: html}}/>
     </div>
   )
 }
@@ -199,12 +281,44 @@ const RB_LABELS: Record<string,string> = {
 }
 
 function Richbox({ block }: { block: ContentBlock }) {
-  const btype = block.content.box_type || 'note'
-  const st = RB_STYLES[btype] || RB_STYLES.note
-  const label = RB_LABELS[btype] || btype.replace(/_/g,' ')
+  const btype    = block.content.box_type || 'note'
+  const st       = RB_STYLES[btype] || RB_STYLES.note
+  const label    = RB_LABELS[btype] || btype.replace(/_/g,' ')
   const titleText = ml_s(block.content.title as Record<string,string>)
   const isDupTitle = titleText && titleText.toLowerCase().trim() === label.toLowerCase().trim()
-  const body = block.content.body || []
+  const body     = (block.content.body || []) as RichboxBodyItem[]
+  const fns      = getFnRefs(block.block_id || '')
+  const isInline = fns.some(fn => fn.display_scope === 'inline')
+
+  // Compute cumulative char offsets across richbox body
+  // getBlockText for richbox: each text part (paragraph, heading, bullet item) joined by "\n"
+  const partOffsets: Array<{type:'para'|'bullet';itemIdx:number;bodyIdx:number;start:number;end:number}> = []
+  let cum = 0
+  body.forEach((item, bi) => {
+    if (item.type === 'paragraph' || item.type === 'heading') {
+      const t = stripTags(ml_s(item.text as Record<string,string>))
+      if (t) {
+        partOffsets.push({type:'para', itemIdx:0, bodyIdx:bi, start:cum, end:cum+t.length})
+        cum += t.length + 1
+      }
+    } else if (item.type === 'bullets' || item.type === 'ordered_list') {
+      ;(item.items || []).forEach((bi2: {text:Record<string,string>}, ii) => {
+        const t = stripTags(ml_s(bi2.text))
+        if (t) {
+          partOffsets.push({type:'bullet', itemIdx:ii, bodyIdx:bi, start:cum, end:cum+t.length})
+          cum += t.length + 1
+        }
+      })
+    }
+  })
+
+  // For each body item, find which fns fall in it
+  function getFnsForPart(start: number, end: number): FnRef[] {
+    return fns.filter(fn => {
+      const e = fn.anchor_char_end || 0
+      return e > start && e <= end
+    })
+  }
 
   return (
     <div style={{margin:'18px 0',borderRadius:'4px',overflow:'hidden',border:`1px solid ${st.border}`}}>
@@ -215,26 +329,65 @@ function Richbox({ block }: { block: ContentBlock }) {
       <div style={{padding:'14px 18px',background:'#fff',fontSize:'16px',lineHeight:'1.72'}}>
         {titleText && !isDupTitle && (
           <div style={{fontWeight:700,fontSize:'15.5px',marginBottom:'10px',paddingBottom:'7px',borderBottom:'1px solid rgba(0,0,0,.07)'}}
-               dangerouslySetInnerHTML={{__html:safe(titleText)}}/>
+               dangerouslySetInnerHTML={{__html: safe(titleText)}}/>
         )}
-        {body.map((item: RichboxBodyItem, i: number) => <RBItem key={i} item={item}/>)}
+        {body.map((item, bi) => {
+          const po = partOffsets.filter(p => p.bodyIdx === bi)
+          return <RBItem key={bi} item={item} partOffsets={po} getFnsForPart={getFnsForPart}/>
+        })}
+        {/* Inline footnotes rendered inside richbox */}
+        {isInline && (
+          <div style={{marginTop:'10px',paddingTop:'8px',borderTop:'1px solid rgba(0,0,0,.06)'}}>
+            {fns.filter(fn => fn.display_scope === 'inline').map((fn, i) => {
+              // Text from _fnIdx we stored — look up from global
+              const text = getInlineFnText(fn)
+              return (
+                <div key={i} id={`fn-${fn.footnote_id||fn.marker}`} style={{display:'flex',gap:'6px',marginBottom:'4px',fontSize:'13px'}}>
+                  <a href={`#fnref-${fn.footnote_id||fn.marker}`} style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'11px',textDecoration:'none'}}>{fn.marker}</a>
+                  <span style={{color:'#444'}}>{text}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function RBItem({ item }: { item: RichboxBodyItem }) {
-  if (item.type === 'paragraph')
-    return <p style={{marginBottom:'8px',textAlign:'justify'}} dangerouslySetInnerHTML={{__html:safe(ml_s(item.text as Record<string,string>))}}/>
-  if (item.type === 'heading')
-    return <div style={{fontWeight:700,margin:'10px 0 6px',fontSize:'15px'}} dangerouslySetInnerHTML={{__html:safe(ml_s(item.text as Record<string,string>))}}/>
+// Store inline fn text lookup - populated by ReaderClient
+let _inlineFnText: Record<string, string> = {}
+export function setInlineFnText(map: Record<string, string>) { _inlineFnText = map }
+function getInlineFnText(fn: FnRef): string {
+  return _inlineFnText[fn.footnote_id || fn.marker] || ''
+}
+
+function RBItem({ item, partOffsets, getFnsForPart }: {
+  item: RichboxBodyItem
+  partOffsets: Array<{type:string;itemIdx:number;bodyIdx:number;start:number;end:number}>
+  getFnsForPart: (start:number, end:number) => FnRef[]
+}) {
+  if (item.type === 'paragraph') {
+    const po = partOffsets[0]
+    const fnsHere = po ? getFnsForPart(po.start, po.end) : []
+    let html = safe(ml_s(item.text as Record<string,string>))
+    if (fnsHere.length > 0) html = injectAllSups(html, fnsHere, po.start)
+    return <p style={{marginBottom:'8px',textAlign:'justify'}} dangerouslySetInnerHTML={{__html: html}}/>
+  }
+  if (item.type === 'heading') {
+    return <div style={{fontWeight:700,margin:'10px 0 6px',fontSize:'15px'}} dangerouslySetInnerHTML={{__html: safe(ml_s(item.text as Record<string,string>))}}/>
+  }
   if (item.type === 'bullets' || item.type === 'ordered_list') {
     const isOrd = item.type === 'ordered_list'
     return (
       <ul style={{listStyle:isOrd?'decimal':'disc',margin:'6px 0 10px 22px',fontSize:'15px'}}>
-        {(item.items||[]).map((bi: {text:Record<string,string>},j:number)=>(
-          <li key={j} style={{marginBottom:'4px'}} dangerouslySetInnerHTML={{__html:safe(ml_s(bi.text))}}/>
-        ))}
+        {(item.items||[]).map((bi: {text:Record<string,string>}, j: number) => {
+          const po = partOffsets.find(p => p.itemIdx === j)
+          const fnsHere = po ? getFnsForPart(po.start, po.end) : []
+          let html = safe(ml_s(bi.text))
+          if (fnsHere.length > 0) html = injectAllSups(html, fnsHere, po!.start)
+          return <li key={j} style={{marginBottom:'4px'}} dangerouslySetInnerHTML={{__html: html}}/>
+        })}
       </ul>
     )
   }
@@ -248,15 +401,14 @@ function RBItem({ item }: { item: RichboxBodyItem }) {
     return (
       <figure style={{margin:'12px 0'}}>
         <div style={{border:'2px solid #1a3a6b',borderRadius:'6px',overflow:'hidden',background:'#f8f8f8'}}>
-          {src ? (
+          {src
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={src} alt={alt} style={{width:'100%',display:'block'}}/>
-          ) : (
-            <div style={{padding:'24px',textAlign:'center',color:'#aaa',fontFamily:'system-ui',fontSize:'12px'}}>
-              <div style={{fontSize:'24px',marginBottom:'4px'}}>🖼</div>
-              <div>{assetRef||'Image'}</div>
-            </div>
-          )}
+            ? <img src={src} alt={alt} style={{width:'100%',display:'block'}}/>
+            : <div style={{padding:'24px',textAlign:'center',color:'#aaa',fontFamily:'system-ui',fontSize:'12px'}}>
+                <div style={{fontSize:'24px',marginBottom:'4px'}}>🖼</div>
+                <div>{assetRef||'Image'}</div>
+              </div>
+          }
         </div>
         {caption && <figcaption style={{fontSize:'12px',fontStyle:'italic',color:'#888',textAlign:'center',marginTop:'5px'}}>{caption}</figcaption>}
       </figure>
@@ -266,6 +418,15 @@ function RBItem({ item }: { item: RichboxBodyItem }) {
 }
 
 // ── Table ─────────────────────────────────────────────────────
+interface DatasetCol { id: string; label: Record<string,string>|string; data_type?: string; align?: string }
+interface DatasetRow { row_id?: string; row_type?: string; style?: string; cells: Record<string,unknown> }
+interface DsFn { marker:string; text:Record<string,string>|string; anchor_row_id?:string; anchor_col_id?:string }
+interface DatasetJson {
+  columns: DatasetCol[]; data: DatasetRow[]
+  header_rows?: unknown[]
+  footnotes?: DsFn[]
+}
+
 function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string }) {
   const caption  = ml_s(block.content.caption as Record<string,string>)
   const tableNum = block.content.table_number as string | undefined
@@ -286,46 +447,41 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
   }, [dsRef, folderPath])
 
   return (
-    <div style={{margin:'24px 0',borderRadius:'8px',border:'2px solid var(--navy)',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(26,58,107,.08)'}}>
-      {/* Caption row */}
+    <div style={{margin:'24px 0',borderRadius:'8px',border:'2px solid #1a3a6b',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(26,58,107,.07)'}}>
       {(tableNum || caption) && (
-        <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'8px',padding:'12px 14px 0'}}>
-          {tableNum && <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,background:'var(--navy)',color:'#fff',padding:'2px 7px',borderRadius:'3px'}}>Table {tableNum}</span>}
+        <div style={{display:'flex',alignItems:'baseline',gap:'10px',padding:'12px 14px 0'}}>
+          {tableNum && <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,background:'var(--navy)',color:'#fff',padding:'2px 7px',borderRadius:'3px',flexShrink:0}}>Table {tableNum}</span>}
           {caption && <span style={{fontSize:'13.5px',fontWeight:600,color:'var(--ink2)'}}>{caption}</span>}
         </div>
       )}
-      {unitNote && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',marginBottom:'4px',padding:'0 14px'}}>{unitNote}</div>}
+      {unitNote && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',padding:'4px 14px 0'}}>{unitNote}</div>}
 
-      {/* Data table or placeholder */}
       {ds ? (
-        <DatasetTable ds={ds} />
+        <DatasetTable ds={ds}/>
       ) : (
-        <div style={{padding:'14px',textAlign:'center',background:'var(--navy-lt)',borderRadius:'4px',fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)',border:'1px solid var(--border)'}}>
-          {loading ? '⏳ Loading table…' : dsRef ? `📊 Dataset: ${dsRef}` : '📊 No dataset reference'}
+        <div style={{padding:'14px',textAlign:'center',background:'#f9f9f9',fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)'}}>
+          {loading ? '⏳ Loading table…' : dsRef ? `📊 ${dsRef}` : '📊 No dataset'}
         </div>
       )}
-      {source && (
-        <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#666',padding:'6px 14px 10px',borderTop:'1px solid #e8e4dc'}}>
-          <b>Source:</b> {source}
-        </div>
-      )}
-      {/* Dataset footnotes rendered inside the card with anchor context */}
-      {ds && ds.footnotes && ds.footnotes.length > 0 && (
+
+      {source && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#666',padding:'6px 14px 10px',borderTop:'1px solid #e8e4dc'}}><b>Source:</b> {source}</div>}
+
+      {/* Dataset footnotes inside the card with col/row anchor context */}
+      {ds?.footnotes && ds.footnotes.length > 0 && (
         <div style={{padding:'8px 14px 12px',borderTop:'1px solid #e8e4dc'}}>
-          {(ds.footnotes as Array<{marker:string;text:Record<string,string>|string;anchor_row_id?:string;anchor_col_id?:string}>).map((fn, fi) => {
+          {ds.footnotes.map((fn, fi) => {
             const text = ml_s(fn.text as Record<string,string>|string)
-            // Build anchor label: col label if available
-            const anchorCol = fn.anchor_col_id
-              ? (ds.columns||[]).find((col: {id:string;label:Record<string,string>|string}) => col.id === fn.anchor_col_id)
+            const col = fn.anchor_col_id
+              ? (ds.columns||[]).find((c: DatasetCol) => c.id === fn.anchor_col_id)
               : null
-            const anchorLabel = anchorCol ? ml_s((anchorCol as {id:string;label:Record<string,string>|string}).label as Record<string,string>|string) : fn.anchor_col_id
+            const colLabel = col ? ml_s((col as DatasetCol).label as Record<string,string>|string) : fn.anchor_col_id
             return (
               <div key={fi} style={{display:'flex',gap:'8px',marginBottom:'5px',fontSize:'12px',fontFamily:'system-ui',lineHeight:1.5}}>
                 <span style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,minWidth:'16px'}}>{fn.marker}</span>
-                <span style={{color:'#666'}}>
-                  {anchorLabel && (
+                <span style={{color:'#555'}}>
+                  {colLabel && (
                     <span style={{background:'#f0f4fa',color:'#1a3a6b',border:'1px solid #d0ddf0',borderRadius:'3px',padding:'0 4px',fontSize:'10.5px',marginRight:'5px',fontWeight:600}}>
-                      {anchorLabel}{fn.anchor_row_id ? ` · Row ${fn.anchor_row_id}` : ''}
+                      {colLabel}{fn.anchor_row_id ? ` · ${fn.anchor_row_id}` : ''}
                     </span>
                   )}
                   {text}
@@ -339,25 +495,28 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
   )
 }
 
-// Dataset JSON shape (simplified)
-interface DatasetCol { id: string; label: Record<string,string>|string; data_type?: string; align?: string }
-interface DatasetRow { row_id?: string; row_type?: string; cells: Record<string, unknown> }
-interface DatasetJson { columns: DatasetCol[]; data: DatasetRow[]; header_rows?: unknown[]; footnotes?: Array<{marker:string; text:Record<string,string>|string; anchor_row_id?:string; anchor_col_id?:string}> }
-
 function DatasetTable({ ds }: { ds: DatasetJson }) {
   const cols = ds.columns || []
-  const rows = ds.data || []
+  const rows = ds.data    || []
 
   function isNum(dt?: string) { return ['integer','float','decimal','currency','percentage'].includes(dt||'') }
   function fmtVal(val: unknown, dt?: string): string {
     if (val === null || val === undefined || val === '') return '—'
     const n = Number(val)
-    if (dt === 'currency') return isNaN(n) ? String(val) : '₹ ' + n.toLocaleString('en-IN')
+    if (dt === 'currency')  return isNaN(n) ? String(val) : '₹ ' + n.toLocaleString('en-IN')
     if (dt === 'percentage') return String(val) + '%'
-    if (dt === 'integer') return isNaN(n) ? String(val) : n.toLocaleString('en-IN')
-    if (dt === 'decimal' || dt === 'float') return isNaN(n) ? String(val) : n.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})
+    if (dt === 'integer')   return isNaN(n) ? String(val) : n.toLocaleString('en-IN')
+    if (dt === 'decimal' || dt === 'float') return isNaN(n) ? String(val) : n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})
     return String(val)
   }
+
+  // Build footnote marker lookup: row_id+col_id → marker
+  const fnMarkers: Record<string,string> = {}
+  ;(ds.footnotes||[]).forEach(fn => {
+    if (fn.anchor_row_id && fn.anchor_col_id) {
+      fnMarkers[`${fn.anchor_row_id}|${fn.anchor_col_id}`] = fn.marker
+    }
+  })
 
   const thStyle: React.CSSProperties = {background:'var(--navy)',color:'#fff',padding:'8px 10px',fontSize:'12px',fontWeight:600,textAlign:'left',borderRight:'1px solid rgba(255,255,255,.15)',verticalAlign:'bottom',lineHeight:1.4}
   const tdStyle: React.CSSProperties = {padding:'7px 10px',borderBottom:'1px solid var(--rule-lt)',borderRight:'1px solid var(--rule-lt)',fontSize:'13px',color:'var(--ink)',lineHeight:1.45}
@@ -366,35 +525,47 @@ function DatasetTable({ ds }: { ds: DatasetJson }) {
     <div style={{overflowX:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
         <thead>
-          <tr>{cols.map(col=>(
-            <th key={col.id} style={{...thStyle,textAlign:(col.align||(isNum(col.data_type)?'right':'left')) as React.CSSProperties['textAlign']}}>
-              {ml_s(col.label as Record<string,string>|string)}
-            </th>
-          ))}</tr>
+          <tr>
+            {cols.map(col=>(
+              <th key={col.id} style={{...thStyle,textAlign:(col.align||(isNum(col.data_type)?'right':'left')) as React.CSSProperties['textAlign']}}>
+                {ml_s(col.label as Record<string,string>|string)}
+              </th>
+            ))}
+          </tr>
         </thead>
         <tbody>
-          {rows.map((row,ri)=>{
+          {rows.map((row, ri)=>{
             const rt = row.row_type || 'data'
-            const isTotal = rt==='total'||rt==='grand_total'
+            const isTotal  = rt==='total'||rt==='grand_total'
             const isSubHdr = rt==='header'
             const rowStyle: React.CSSProperties = isTotal
               ? {fontWeight:700,borderTop:'2px solid var(--navy)',background:'#edf1f8'}
-              : isSubHdr
-              ? {fontWeight:700,background:'#d4dcec',fontSize:'12.5px'}
+              : isSubHdr ? {fontWeight:700,background:'#d4dcec',fontSize:'12.5px'}
               : ri%2===1 ? {background:'#f8f8f5'} : {}
+            if (row.style==='bold') (rowStyle as Record<string,unknown>).fontWeight = 700
             return (
               <tr key={ri} style={rowStyle}>
                 {cols.map(col=>{
                   const cell = row.cells?.[col.id]
-                  const cellObj = (cell !== null && typeof cell === 'object' && !Array.isArray(cell)) ? cell as Record<string,unknown> : {value: cell}
+                  const cellObj = (cell !== null && typeof cell === 'object' && !Array.isArray(cell))
+                    ? cell as Record<string,unknown>
+                    : {value: cell}
                   const align = col.align||(isNum(col.data_type)?'right':'left')
                   let display = ''
                   if (cellObj.nil_marker) display = 'nil'
                   else if (cellObj.display) display = ml_s(cellObj.display as Record<string,string>|string)
                   else display = fmtVal(cellObj.value, col.data_type)
+                  if (cellObj.is_negative) display = `(${display})`
+
+                  // Footnote marker in cell
+                  const fnMark = row.row_id ? fnMarkers[`${row.row_id}|${col.id}`] : undefined
+                  const fnSup = fnMark
+                    ? `<sup style="color:#8b1a1a;font-size:10px;font-weight:700;font-family:system-ui">${fnMark}</sup>`
+                    : ''
+
                   return (
-                    <td key={col.id} style={{...tdStyle, textAlign: align as React.CSSProperties['textAlign']}}>
-                      {display}
+                    <td key={col.id} style={{...tdStyle,textAlign:align as React.CSSProperties['textAlign'],fontWeight:cellObj.style==='bold'?700:undefined}}>
+                      <span dangerouslySetInnerHTML={{__html: safe(display) + fnSup}}/>
                     </td>
                   )
                 })}
@@ -416,7 +587,6 @@ function Image({ block, folderPath }: { block: ContentBlock; folderPath?: string
 
   React.useEffect(() => {
     if (!assetRef || !folderPath) return
-    // Route through server-side API to avoid exposing GITHUB_TOKEN
     const assetPath = `${folderPath}/${assetRef}`.replace(/^\//, '')
     setImgSrc(`/api/asset?path=${encodeURIComponent(assetPath)}`)
   }, [assetRef, folderPath])
@@ -424,16 +594,14 @@ function Image({ block, folderPath }: { block: ContentBlock; folderPath?: string
   return (
     <figure style={{margin:'24px 0'}}>
       <div style={{border:'2px solid #1a3a6b',borderRadius:'8px',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(26,58,107,.07)'}}>
-        {imgSrc ? (
+        {imgSrc
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imgSrc} alt={alt} style={{width:'100%',display:'block'}} />
-        ) : (
-          <div style={{padding:'28px 16px',textAlign:'center',color:'#aaa',background:'#f9f8f6'}}>
-            <div style={{fontSize:'28px',marginBottom:'6px'}}>🖼</div>
-            <div style={{fontFamily:'system-ui',fontSize:'12px',color:'#888'}}>{assetRef || 'Image / Figure'}</div>
-            <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#bbb',marginTop:'4px'}}>Asset will load when available</div>
-          </div>
-        )}
+          ? <img src={imgSrc} alt={alt} style={{width:'100%',display:'block'}}/>
+          : <div style={{padding:'28px 16px',textAlign:'center',color:'#aaa',background:'#f9f8f6'}}>
+              <div style={{fontSize:'28px',marginBottom:'6px'}}>🖼</div>
+              <div style={{fontFamily:'system-ui',fontSize:'12px',color:'#888'}}>{assetRef||'Image'}</div>
+            </div>
+        }
         {caption && (
           <div style={{borderTop:'1px solid #e8e4dc',padding:'8px 14px',fontFamily:'system-ui',fontSize:'12px',fontStyle:'italic',color:'#666',textAlign:'center',background:'#fafaf8'}}>
             {caption}
@@ -444,32 +612,25 @@ function Image({ block, folderPath }: { block: ContentBlock; folderPath?: string
   )
 }
 
-// ── Signature ─────────────────────────────────────────────────
+// ── Signature block ───────────────────────────────────────────
 function Sig({ block }: { block: ContentBlock }) {
   const sigs = (block.content.signatories || []) as Array<{
     role?: string; name?: Record<string,string>|string
     designation?: Record<string,string>|string; date?: string; place?: Record<string,string>|string
   }>
-  // Role labels — handle both snake_case and "Label:" formats from the data
-  const roleLabels: Record<string,string> = {
-    signed_by:'Signed by', countersigned_by:'Countersigned by', verified_by:'Verified by',
-    witnessed_by:'Witnessed by', approved_by:'Approved by',
-  }
   function getRole(role?: string): string {
     if (!role) return ''
-    // Lookup snake_case
-    if (roleLabels[role]) return roleLabels[role]
-    // Clean up "Signed By:" → "Signed By"
-    return role.replace(/:+$/, '').trim()
+    const map: Record<string,string> = {signed_by:'Signed by',countersigned_by:'Countersigned by',verified_by:'Verified by'}
+    return map[role] || role.replace(/:+$/, '').trim()
   }
+  if (!sigs.length) return null
   return (
     <div style={{margin:'24px 0',padding:'16px',border:'1px solid var(--rule)',borderRadius:'4px',background:'#fafaf8'}}>
+      <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'#aaa',marginBottom:'14px'}}>Signatures</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:'20px'}}>
-        {sigs.map((s,i)=>(
+        {sigs.map((s, i) => (
           <div key={i} style={{flex:1,minWidth:'200px'}}>
-            <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--ink3)',marginBottom:'6px'}}>
-              {getRole(s.role)}
-            </div>
+            <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--ink3)',marginBottom:'6px'}}>{getRole(s.role)}</div>
             <div style={{height:'48px',borderBottom:'1px solid var(--rule)',marginBottom:'8px'}}/>
             <div style={{fontSize:'15px',fontWeight:700}}>{ml_s(s.name)}</div>
             {s.designation && <div style={{fontSize:'13px',color:'var(--ink2)',marginTop:'2px'}}>{ml_s(s.designation)}</div>}
@@ -478,6 +639,36 @@ function Sig({ block }: { block: ContentBlock }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ── Callout ───────────────────────────────────────────────────
+function Callout({ block }: { block: ContentBlock }) {
+  const ct    = (block.content as Record<string,unknown>).callout_type as string || 'note'
+  const title = ml_s((block.content as Record<string,unknown>).title as Record<string,string>)
+  const text  = ml_s(block.content.text as Record<string,string>)
+  return (
+    <div style={{borderLeft:'4px solid var(--navy)',background:'var(--navy-lt)',padding:'10px 16px',margin:'14px 0',borderRadius:'0 4px 4px 0'}}>
+      <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--navy)',marginBottom:'4px'}}>{ct.replace(/_/g,' ')}</div>
+      {title && <div style={{fontWeight:700,marginBottom:'4px'}} dangerouslySetInnerHTML={{__html:safe(title)}}/>}
+      <div dangerouslySetInnerHTML={{__html:safe(text)}}/>
+    </div>
+  )
+}
+
+// ── Audit finding ─────────────────────────────────────────────
+function AuditFinding({ block }: { block: ContentBlock }) {
+  const c = block.content as Record<string,unknown>
+  const obs = ml_s(c.observation as Record<string,string>)
+  return (
+    <div style={{border:'1px solid #e8b8b8',background:'#fdf5f5',borderRadius:'4px',borderLeft:'4px solid #8b1a1a',padding:'12px 16px',margin:'14px 0'}}>
+      <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'#8b1a1a',marginBottom:'6px'}}>
+        Audit Finding{block.para_number?` · Para ${block.para_number}`:''}
+      </div>
+      {c.title && <div style={{fontWeight:700,marginBottom:'8px',fontSize:'15px'}} dangerouslySetInnerHTML={{__html:safe(ml_s(c.title as Record<string,string>))}}/>}
+      <div dangerouslySetInnerHTML={{__html:safe(obs)}}/>
+      {c.effect && <div style={{marginTop:'8px'}}><b>Effect:</b> <span dangerouslySetInnerHTML={{__html:safe(ml_s(c.effect as Record<string,string>))}}/></div>}
     </div>
   )
 }
