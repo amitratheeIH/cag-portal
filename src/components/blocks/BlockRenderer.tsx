@@ -664,14 +664,16 @@ function Callout({ block }: { block: ContentBlock }) {
 function AuditFinding({ block }: { block: ContentBlock }) {
   const c = block.content as Record<string,unknown>
   const obs = ml_s(c.observation as Record<string,string>)
+  const titleStr = c.title ? ml_s(c.title as Record<string,string>) : ''
+  const effectStr = c.effect ? ml_s(c.effect as Record<string,string>) : ''
   return (
     <div style={{border:'1px solid #e8b8b8',background:'#fdf5f5',borderRadius:'4px',borderLeft:'4px solid #8b1a1a',padding:'12px 16px',margin:'14px 0'}}>
       <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'#8b1a1a',marginBottom:'6px'}}>
-        Audit Finding{block.para_number?` · Para ${block.para_number}`:''}
+        Audit Finding{block.para_number ? ` · Para ${block.para_number}` : ''}
       </div>
-      {c.title && <div style={{fontWeight:700,marginBottom:'8px',fontSize:'15px'}} dangerouslySetInnerHTML={{__html:safe(ml_s(c.title as Record<string,string>))}}/>}
+      {titleStr && <div style={{fontWeight:700,marginBottom:'8px',fontSize:'15px'}} dangerouslySetInnerHTML={{__html:safe(titleStr)}}/>}
       <div dangerouslySetInnerHTML={{__html:safe(obs)}}/>
-      {c.effect && <div style={{marginTop:'8px'}}><b>Effect:</b> <span dangerouslySetInnerHTML={{__html:safe(ml_s(c.effect as Record<string,string>))}}/></div>}
+      {effectStr && <div style={{marginTop:'8px'}}><b>Effect:</b> <span dangerouslySetInnerHTML={{__html:safe(effectStr)}}/></div>}
     </div>
   )
 }
