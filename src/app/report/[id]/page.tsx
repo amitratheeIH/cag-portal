@@ -92,6 +92,7 @@ export default async function ReportPage({ params, searchParams }: Props) {
         metadata: meta.metadata as { common: { title: Record<string, string>; year: number } },
       }}
       unitIdFromUrl={searchParams.unit}
+      folderPath={folderPath}
     />
   )
 }

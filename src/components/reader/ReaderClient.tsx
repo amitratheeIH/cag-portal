@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
-import { BlockRenderer } from '@/components/blocks/BlockRenderer'
+import { BlockRenderer, setFolderPath } from '@/components/blocks/BlockRenderer'
 
 interface ReaderData {
   structure: ReportStructure
@@ -11,8 +11,8 @@ interface ReaderData {
   metadata: { common: { title: Record<string, string>; year: number } }
 }
 
-export function ReaderClient({ productId, initialData, unitIdFromUrl }: {
-  productId: string; initialData: ReaderData; unitIdFromUrl?: string
+export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath }: {
+  productId: string; initialData: ReaderData; unitIdFromUrl?: string; folderPath?: string
 }) {
   const [flatUnits, setFlatUnits] = useState<FlatUnit[]>([])
   const [activeUid, setActiveUid] = useState<string>('')
@@ -20,6 +20,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl }: {
   const contentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (folderPath) setFolderPath(folderPath)
     const units = buildFlatUnitList(initialData.structure)
     setFlatUnits(units)
     // Set initial active unit — prefer URL param, else first unit

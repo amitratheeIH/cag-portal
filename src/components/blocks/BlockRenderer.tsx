@@ -1,6 +1,11 @@
 'use client'
 
+import React, { useState, useEffect } from 'react'
 import { ml, type ContentBlock, type ListItem, type RichboxBodyItem } from '@/types'
+
+// Set by ReaderClient before rendering blocks
+let _folderPath = ''
+export function setFolderPath(p: string) { _folderPath = p }
 
 function safe(s: string): string {
   if (!s) return ''
@@ -25,8 +30,8 @@ export function BlockRenderer({ block }: { block: ContentBlock }) {
   if (bt === 'list')               return <List block={block} />
   if (bt === 'recommendation')     return <Rec block={block} />
   if (bt === 'richbox' || bt === 'executive_summary_block') return <Richbox block={block} />
-  if (bt === 'table')              return <Table block={block} />
-  if (bt === 'image' || bt === 'figure' || bt === 'map') return <Image block={block} />
+  if (bt === 'table')              return <Table block={block} folderPath={_folderPath} />
+  if (bt === 'image' || bt === 'figure' || bt === 'map') return <Image block={block} folderPath={_folderPath} />
   if (bt === 'signature_block')    return <Sig block={block} />
   if (bt === 'divider')            return <hr style={{border:'none',borderTop:'1px solid var(--rule-lt)',margin:'20px 0'}}/>
   if (bt === 'callout')            return <Callout block={block} />
@@ -213,46 +218,144 @@ function RBItem({ item }: { item: RichboxBodyItem }) {
 }
 
 // ── Table ─────────────────────────────────────────────────────
-function Table({ block }: { block: ContentBlock }) {
+function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string }) {
   const caption  = ml_s(block.content.caption as Record<string,string>)
-  const tableNum = block.content.table_number
+  const tableNum = block.content.table_number as string | undefined
   const unitNote = ml_s(block.content.unit_note as Record<string,string>)
   const source   = ml_s(block.content.source as Record<string,string>)
-  const dsRef    = block.content.dataset_ref
+  const dsRef    = block.content.dataset_ref as string | undefined
+  const [ds, setDs] = React.useState<DatasetJson | null>(null)
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!dsRef || !folderPath) return
+    setLoading(true)
+    fetch(`/api/dataset?folder=${encodeURIComponent(folderPath)}&id=${encodeURIComponent(dsRef)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setDs(data) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [dsRef, folderPath])
 
   return (
-    <div style={{margin:'20px 0',padding:'16px',background:'#fff',border:'1px solid var(--rule)',borderRadius:'6px'}}>
+    <div style={{margin:'20px 0'}}>
+      {/* Caption row */}
       {(tableNum || caption) && (
         <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'8px'}}>
-          {tableNum && <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,background:'var(--navy)',color:'#fff',padding:'2px 7px',borderRadius:'3px',letterSpacing:'.4px'}}>Table {tableNum}</span>}
+          {tableNum && <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,background:'var(--navy)',color:'#fff',padding:'2px 7px',borderRadius:'3px'}}>Table {tableNum}</span>}
           {caption && <span style={{fontSize:'13.5px',fontWeight:600,color:'var(--ink2)'}}>{caption}</span>}
         </div>
       )}
       {unitNote && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'var(--ink3)',fontStyle:'italic',textAlign:'right',marginBottom:'4px'}}>{unitNote}</div>}
-      <div style={{overflowX:'auto'}}>
-        <div style={{padding:'14px',textAlign:'center',background:'var(--navy-lt)',borderRadius:'4px',fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)'}}>
-          📊 {dsRef ? <>Dataset: <code>{dsRef}</code> — load report data to render</> : 'Table data'}
+
+      {/* Data table or placeholder */}
+      {ds ? (
+        <DatasetTable ds={ds} />
+      ) : (
+        <div style={{padding:'14px',textAlign:'center',background:'var(--navy-lt)',borderRadius:'4px',fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)',border:'1px solid var(--border)'}}>
+          {loading ? '⏳ Loading table…' : dsRef ? `📊 Dataset: ${dsRef}` : '📊 No dataset reference'}
         </div>
-      </div>
+      )}
       {source && <div style={{fontFamily:'system-ui',fontSize:'11.5px',color:'var(--ink3)',marginTop:'6px',paddingTop:'5px',borderTop:'1px solid var(--rule-lt)'}}><b>Source:</b> {source}</div>}
     </div>
   )
 }
 
+// Dataset JSON shape (simplified)
+interface DatasetCol { id: string; label: Record<string,string>|string; data_type?: string; align?: string }
+interface DatasetRow { row_id?: string; row_type?: string; cells: Record<string, unknown> }
+interface DatasetJson { columns: DatasetCol[]; data: DatasetRow[]; header_rows?: unknown[]; footnotes?: Array<{marker:string; text:Record<string,string>|string; anchor_row_id?:string; anchor_col_id?:string}> }
+
+function DatasetTable({ ds }: { ds: DatasetJson }) {
+  const cols = ds.columns || []
+  const rows = ds.data || []
+
+  function isNum(dt?: string) { return ['integer','float','decimal','currency','percentage'].includes(dt||'') }
+  function fmtVal(val: unknown, dt?: string): string {
+    if (val === null || val === undefined || val === '') return '—'
+    const n = Number(val)
+    if (dt === 'currency') return isNaN(n) ? String(val) : '₹ ' + n.toLocaleString('en-IN')
+    if (dt === 'percentage') return String(val) + '%'
+    if (dt === 'integer') return isNaN(n) ? String(val) : n.toLocaleString('en-IN')
+    if (dt === 'decimal' || dt === 'float') return isNaN(n) ? String(val) : n.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})
+    return String(val)
+  }
+
+  const thStyle: React.CSSProperties = {background:'var(--navy)',color:'#fff',padding:'8px 10px',fontSize:'12px',fontWeight:600,textAlign:'left',borderRight:'1px solid rgba(255,255,255,.15)',verticalAlign:'bottom',lineHeight:1.4}
+  const tdStyle: React.CSSProperties = {padding:'7px 10px',borderBottom:'1px solid var(--rule-lt)',borderRight:'1px solid var(--rule-lt)',fontSize:'13px',color:'var(--ink)',lineHeight:1.45}
+
+  return (
+    <div style={{overflowX:'auto',border:'1px solid var(--rule)',borderRadius:'4px'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+        <thead>
+          <tr>{cols.map(col=>(
+            <th key={col.id} style={{...thStyle,textAlign:(col.align||(isNum(col.data_type)?'right':'left')) as React.CSSProperties['textAlign']}}>
+              {ml_s(col.label as Record<string,string>|string)}
+            </th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {rows.map((row,ri)=>{
+            const rt = row.row_type || 'data'
+            const isTotal = rt==='total'||rt==='grand_total'
+            const isSubHdr = rt==='header'
+            const rowStyle: React.CSSProperties = isTotal
+              ? {fontWeight:700,borderTop:'2px solid var(--navy)',background:'#edf1f8'}
+              : isSubHdr
+              ? {fontWeight:700,background:'#d4dcec',fontSize:'12.5px'}
+              : ri%2===1 ? {background:'#f8f8f5'} : {}
+            return (
+              <tr key={ri} style={rowStyle}>
+                {cols.map(col=>{
+                  const cell = row.cells?.[col.id]
+                  const cellObj = (cell !== null && typeof cell === 'object' && !Array.isArray(cell)) ? cell as Record<string,unknown> : {value: cell}
+                  const align = col.align||(isNum(col.data_type)?'right':'left')
+                  let display = ''
+                  if (cellObj.nil_marker) display = 'nil'
+                  else if (cellObj.display) display = ml_s(cellObj.display as Record<string,string>|string)
+                  else display = fmtVal(cellObj.value, col.data_type)
+                  return (
+                    <td key={col.id} style={{...tdStyle, textAlign: align as React.CSSProperties['textAlign']}}>
+                      {display}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Image ─────────────────────────────────────────────────────
-function Image({ block }: { block: ContentBlock }) {
+function Image({ block, folderPath }: { block: ContentBlock; folderPath?: string }) {
   const caption  = ml_s(block.content.caption as Record<string,string>)
   const alt      = ml_s(block.content.alt_text as Record<string,string>) || caption || 'Figure'
-  const assetRef = block.content.asset_ref
+  const assetRef = block.content.asset_ref as string | undefined
+  const [imgSrc, setImgSrc] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!assetRef || !folderPath) return
+    // Route through server-side API to avoid exposing GITHUB_TOKEN
+    const assetPath = `${folderPath}/${assetRef}`.replace(/^\//, '')
+    setImgSrc(`/api/asset?path=${encodeURIComponent(assetPath)}`)
+  }, [assetRef, folderPath])
 
   return (
     <figure style={{margin:'20px 0'}}>
       <div style={{border:'1px solid var(--rule)',borderRadius:'6px',overflow:'hidden',background:'#fff'}}>
-        <div style={{padding:'28px 16px',textAlign:'center',color:'var(--ink3)',background:'var(--page)'}}>
-          <div style={{fontSize:'28px',marginBottom:'6px'}}>🖼</div>
-          <div style={{fontFamily:'system-ui',fontSize:'12px'}}>{assetRef || 'Image / Figure'}</div>
-          <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',marginTop:'4px'}}>Load assets folder to display</div>
-        </div>
+        {imgSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imgSrc} alt={alt} style={{width:'100%',display:'block'}} />
+        ) : (
+          <div style={{padding:'28px 16px',textAlign:'center',color:'var(--ink3)',background:'var(--page)'}}>
+            <div style={{fontSize:'28px',marginBottom:'6px'}}>🖼</div>
+            <div style={{fontFamily:'system-ui',fontSize:'12px'}}>{assetRef || 'Image / Figure'}</div>
+            <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',marginTop:'4px'}}>Load assets folder to display</div>
+          </div>
+        )}
       </div>
       {caption && <figcaption style={{fontSize:'13px',fontStyle:'italic',color:'var(--ink3)',textAlign:'center',marginTop:'6px'}}>{caption}</figcaption>}
     </figure>
@@ -261,20 +364,28 @@ function Image({ block }: { block: ContentBlock }) {
 
 // ── Signature ─────────────────────────────────────────────────
 function Sig({ block }: { block: ContentBlock }) {
-  const sigs = block.content.signatories || []
-  const roleLabels: Record<string,string> = {signed_by:'Signed by',countersigned_by:'Countersigned by',verified_by:'Verified by'}
+  const sigs = (block.content.signatories || []) as Array<{
+    role?: string; name?: Record<string,string>|string
+    designation?: Record<string,string>|string; date?: string; place?: Record<string,string>|string
+  }>
+  const roleLabels: Record<string,string> = {
+    signed_by:'Signed by', countersigned_by:'Countersigned by', verified_by:'Verified by'
+  }
   return (
     <div style={{margin:'24px 0',padding:'16px',border:'1px solid var(--rule)',borderRadius:'4px',background:'#fafaf8'}}>
       <div style={{display:'flex',flexWrap:'wrap',gap:'20px'}}>
-        {(sigs as unknown[]).map((sig,i:number)=>{ const s = sig as Record<string,unknown>; return (
+        {sigs.map((s,i)=>(
           <div key={i} style={{flex:1,minWidth:'200px'}}>
-            <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--ink3)',marginBottom:'6px'}}>{roleLabels[s.role as string]||s.role as string||''}</div>
+            <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--ink3)',marginBottom:'6px'}}>
+              {(s.role && roleLabels[s.role]) || s.role || ''}
+            </div>
             <div style={{height:'48px',borderBottom:'1px solid var(--rule)',marginBottom:'8px'}}/>
-            <div style={{fontSize:'15px',fontWeight:700}}>{ml_s(s.name as Record<string,string>)}</div>
-            {s.designation&&<div style={{fontSize:'13px',color:'var(--ink2)',marginTop:'2px'}}>{ml_s(s.designation as Record<string,string>)}</div>}
-            {s.date&&<div style={{fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)',marginTop:'3px'}}>{s.date as string}</div>}
+            <div style={{fontSize:'15px',fontWeight:700}}>{ml_s(s.name)}</div>
+            {s.designation && <div style={{fontSize:'13px',color:'var(--ink2)',marginTop:'2px'}}>{ml_s(s.designation)}</div>}
+            {s.date && <div style={{fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)',marginTop:'3px'}}>{s.date}</div>}
+            {s.place && <div style={{fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)'}}>{ml_s(s.place)}</div>}
           </div>
-        ); })}
+        ))}
       </div>
     </div>
   )
