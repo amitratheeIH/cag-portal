@@ -216,9 +216,10 @@ function RBItem({ item }: { item: RichboxBodyItem }) {
     )
   }
   if (item.type === 'image') {
-    const assetRef = (item as Record<string,unknown>).asset_ref as string | undefined
-    const caption  = ml_s((item as Record<string,unknown>).caption as Record<string,string>)
-    const alt      = ml_s((item as Record<string,unknown>).alt_text as Record<string,string>) || caption || 'Figure'
+    const img = item as unknown as Record<string,unknown>
+    const assetRef = img.asset_ref as string | undefined
+    const caption  = ml_s(img.caption as Record<string,string>)
+    const alt      = ml_s(img.alt_text as Record<string,string>) || caption || 'Figure'
     const assetPath = (assetRef && _folderPath) ? `${_folderPath}/${assetRef}`.replace(/^\//, '') : ''
     const src = assetPath ? `/api/asset?path=${encodeURIComponent(assetPath)}` : ''
     return (
