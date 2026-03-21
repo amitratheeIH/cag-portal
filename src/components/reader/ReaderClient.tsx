@@ -50,16 +50,22 @@ function collectChapterFn(chapterUid: string, sectionUids: string[]): Fn[] {
   return all.sort((a,b) => (parseInt(a.marker)||0) - (parseInt(b.marker)||0))
 }
 
-// ── isTopLevel: any unit with no parent_id is a page ─────────
+// ── Top-level: depth 0 in the flat list ──────────────────────
 function isTopLevel(u: FlatUnit): boolean {
-  return !u.parent_id
+  return u.depth === 0
 }
 
-// ── Sections for a chapter — parent_id only, no positional ───
-function getSections(chapterUid: string, flatUnits: FlatUnit[]): FlatUnit[] {
+// ── Direct children of a unit, sorted by seq ─────────────────
+function getSections(parentUid: string, flatUnits: FlatUnit[]): FlatUnit[] {
   return flatUnits
-    .filter(u => u.parent_id === chapterUid)
+    .filter(u => u.parent_id === parentUid)
     .sort((a,b) => (a.seq||0) - (b.seq||0))
+}
+
+// ── ALL descendants of a unit recursively (for footnote collection) ──
+function getDescendantUids(parentUid: string, flatUnits: FlatUnit[]): string[] {
+  const direct = flatUnits.filter(u => u.parent_id === parentUid)
+  return direct.flatMap(u => [u.unit_id, ...getDescendantUids(u.unit_id, flatUnits)])
 }
 
 // ── ReaderData ────────────────────────────────────────────────
@@ -140,8 +146,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const hasNext = chapterIdx < chapters.length - 1
 
   // Build footnote index for BlockRenderer BEFORE rendering blocks
+  // Use ALL descendants so footnotes in deeply nested units work
   if (current) {
-    const fnIdx = buildFnIndexForChapter(current.unit_id, sections.map(s=>s.unit_id))
+    const allDesc = getDescendantUids(current.unit_id, flatUnits)
+    const fnIdx = buildFnIndexForChapter(current.unit_id, allDesc)
     setFnIndex(fnIdx)
   }
 
@@ -208,7 +216,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         <div ref={contentRef} style={{flex:1,overflowY:'auto',background:'#edeae4',minHeight:0}}>
           {current && (
             <ChapterPage
-              unit={current} sections={sections}
+              unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
               prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
               onNavigate={goTo} chapterIdx={chapterIdx}
@@ -221,8 +229,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate, chapterIdx }: {
-  unit: FlatUnit; sections: FlatUnit[]
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx }: {
+  unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   prev?: FlatUnit; next?: FlatUnit
   onNavigate: (i:number, sid?:string)=>void; chapterIdx: number
@@ -238,7 +246,9 @@ function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate
   let chNum = uFile.para_number || unit.para_number || ''
   if (!chNum && title) { const m = title.match(/Chapter\s+(\d+)/i); if (m) chNum = `Chapter ${m[1]}` }
 
-  const fnotes = collectChapterFn(uid, sections.map(s=>s.unit_id))
+  // Collect footnotes from this unit + ALL descendants at any depth
+  const descendantUids = getDescendantUids(uid, flatUnits)
+  const fnotes = collectChapterFn(uid, descendantUids)
 
   return (
     <div style={{padding:'0 0 48px'}}>
@@ -282,7 +292,7 @@ function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate
           <UnitBlocks uid={uid} blocks={blocks}/>
 
           {sections.map(sec=>(
-            <SectionBlock key={sec.unit_id} unit={sec} unitFiles={unitFiles} blocks={blocks}/>
+            <SectionBlock key={sec.unit_id} unit={sec} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={1}/>
           ))}
 
           {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
@@ -300,22 +310,40 @@ function ChapterPage({ unit, sections, unitFiles, blocks, prev, next, onNavigate
 }
 
 // ── Section block ─────────────────────────────────────────────
-function SectionBlock({ unit, unitFiles, blocks }: {
-  unit: FlatUnit; unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
+function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1 }: {
+  unit: FlatUnit; flatUnits: FlatUnit[]
+  unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
+  depth?: number
 }) {
-  const uid   = unit.unit_id
-  const uFile = unitFiles[uid] || unit
-  const title = ml(uFile.title || unit.title)
+  const uid    = unit.unit_id
+  const uFile  = unitFiles[uid] || unit
+  const title  = ml(uFile.title || unit.title)
   const secNum = uFile.para_number || unit.para_number || ''
-  const meta  = uFile.metadata
-  const afc   = meta?.audit_findings_categories || []
+  const meta   = uFile.metadata
+  const afc    = meta?.audit_findings_categories || []
+
+  // Children of this section (sub-sections), sorted by seq
+  const children = getSections(uid, flatUnits)
+
+  // Title size scales with depth: depth 1 = section, depth 2 = sub-section etc.
+  const titleSize = depth === 1 ? '20px' : depth === 2 ? '17px' : '15px'
+  const borderStyle = depth === 1 ? '1px solid #e8e4dc' : '1px solid #f0ece4'
+  const topMargin = depth === 1 ? '40px' : '28px'
 
   return (
-    <div id={`sec-${uid}`} style={{marginTop:'40px',scrollMarginTop:'20px'}}>
+    <div id={`sec-${uid}`} style={{marginTop:topMargin, scrollMarginTop:'20px'}}>
       {(secNum || title) && (
-        <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'14px',paddingBottom:'9px',borderBottom:'1px solid #e8e4dc'}}>
-          {secNum && <span style={{fontFamily:'system-ui',fontSize:'13px',fontWeight:700,color:'#c47a20',flexShrink:0}}>{secNum}</span>}
-          {title && <span style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:'20px',fontWeight:700,color:'#1a1a1a',lineHeight:1.25}}>{title}</span>}
+        <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'12px',paddingBottom:'8px',borderBottom:borderStyle}}>
+          {secNum && (
+            <span style={{fontFamily:'system-ui',fontSize: depth===1?'13px':'12px',fontWeight:700,color:'#c47a20',flexShrink:0}}>
+              {secNum}
+            </span>
+          )}
+          {title && (
+            <span style={{fontFamily:'Georgia,"Times New Roman",serif',fontSize:titleSize,fontWeight:700,color:'#1a1a1a',lineHeight:1.25}}>
+              {title}
+            </span>
+          )}
         </div>
       )}
       {afc.length > 0 && (
@@ -328,6 +356,10 @@ function SectionBlock({ unit, unitFiles, blocks }: {
         </div>
       )}
       <UnitBlocks uid={uid} blocks={blocks}/>
+      {/* Render children recursively */}
+      {children.map(child=>(
+        <SectionBlock key={child.unit_id} unit={child} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={depth+1}/>
+      ))}
     </div>
   )
 }
@@ -421,24 +453,9 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
               }}>
                 {ml(ch.title)||ch.unit_id}
               </button>
-              {/* Sections — always visible, click scrolls to section anchor */}
+              {/* Sections — always visible, rendered recursively */}
               {secs.map(sec=>(
-                <button key={sec.unit_id}
-                  onClick={()=>onNavigate(idx, sec.unit_id)}
-                  style={{
-                    width:'100%',textAlign:'left',
-                    display:'flex',alignItems:'baseline',gap:'5px',
-                    padding:'3px 16px 3px 24px',
-                    fontFamily:'system-ui',fontSize:'11px',fontWeight:400,
-                    border:'none',outline:'none',
-                    borderLeft:`3px solid ${isActive?'#e4e0d8':'transparent'}`,
-                    background:'transparent',
-                    color:isActive?'#555':'#aaa',
-                    cursor:'pointer',lineHeight:1.4,
-                  }}>
-                  {sec.para_number&&<span style={{color:'#c47a20',fontSize:'10px',fontWeight:600,flexShrink:0}}>{sec.para_number}</span>}
-                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ml(sec.title)||sec.unit_id}</span>
-                </button>
+                <TOCSectionItem key={sec.unit_id} sec={sec} flatUnits={flatUnits} idx={idx} isChapterActive={isActive} onNavigate={onNavigate} indentLevel={1}/>
               ))}
             </div>
           )
@@ -453,6 +470,40 @@ function TOCPanel({ flatUnits, chapters, currentIdx, onNavigate }: {
       <Group label="Chapters & sections" items={chaptersList}/>
       {orphanSecs.length>0&&<Group label="Other" items={orphanSecs}/>}
       <Group label="Back matter" items={backMatter}/>
+    </>
+  )
+}
+
+function TOCSectionItem({ sec, flatUnits, idx, isChapterActive, onNavigate, indentLevel }: {
+  sec: FlatUnit; flatUnits: FlatUnit[]; idx: number
+  isChapterActive: boolean; onNavigate:(i:number,sid?:string)=>void; indentLevel: number
+}) {
+  const children = getSections(sec.unit_id, flatUnits)
+  const leftPad = 16 + indentLevel * 12
+  const fontSize = indentLevel === 1 ? '11px' : '10.5px'
+  return (
+    <>
+      <button onClick={()=>onNavigate(idx, sec.unit_id)} style={{
+        width:'100%', textAlign:'left',
+        display:'flex', alignItems:'baseline', gap:'5px',
+        padding:`3px 16px 3px ${leftPad}px`,
+        fontFamily:'system-ui', fontSize, fontWeight:400,
+        border:'none', outline:'none',
+        borderLeft:`3px solid ${isChapterActive?'#e4e0d8':'transparent'}`,
+        background:'transparent',
+        color: isChapterActive ? '#555' : '#aaa',
+        cursor:'pointer', lineHeight:1.4,
+      }}>
+        {sec.para_number && (
+          <span style={{color:'#c47a20',fontSize:'10px',fontWeight:600,flexShrink:0}}>{sec.para_number}</span>
+        )}
+        <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+          {ml(sec.title)||sec.unit_id}
+        </span>
+      </button>
+      {children.map(child=>(
+        <TOCSectionItem key={child.unit_id} sec={child} flatUnits={flatUnits} idx={idx} isChapterActive={isChapterActive} onNavigate={onNavigate} indentLevel={indentLevel+1}/>
+      ))}
     </>
   )
 }

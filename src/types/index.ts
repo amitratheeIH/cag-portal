@@ -240,39 +240,50 @@ export interface FlatUnit extends ContentUnit {
 }
 
 export function buildFlatUnitList(structure: ReportStructure): FlatUnit[] {
-  const all = [
-    ...structure.front_matter,
-    ...structure.content_units,
-    ...structure.back_matter,
+  // Combine all units from all three sections, preserving their section group
+  // Front matter → content_units → back_matter, each group sorted by seq
+  const groups = [
+    structure.front_matter  || [],
+    structure.content_units || [],
+    structure.back_matter   || [],
   ]
 
-  const byId: Record<string, ContentUnit> = {}
-  all.forEach(u => { byId[u.unit_id] = u })
-
-  // Build children map
+  // Build a children map from parent_id across ALL units
   const childrenOf: Record<string, ContentUnit[]> = {}
-  const roots: ContentUnit[] = []
+  const allUnits: ContentUnit[] = []
+  groups.forEach(group => group.forEach(u => allUnits.push(u)))
 
-  ;[...structure.front_matter, ...structure.content_units, ...structure.back_matter].forEach(u => {
-    if (!u.parent_id) {
-      roots.push(u)
-    } else {
+  allUnits.forEach(u => {
+    if (u.parent_id) {
       if (!childrenOf[u.parent_id]) childrenOf[u.parent_id] = []
       childrenOf[u.parent_id].push(u)
     }
   })
 
-  // Sort roots by their original array order (not seq — seq is scoped per array)
+  // Sort each children group by seq
+  Object.keys(childrenOf).forEach(pid => {
+    childrenOf[pid].sort((a, b) => (a.seq || 0) - (b.seq || 0))
+  })
+
   const ordered: FlatUnit[] = []
   let index = 0
 
   function walk(u: ContentUnit, depth: number, path: string[]) {
     const flat: FlatUnit = { ...u, depth, index: index++, sectionPath: path }
     ordered.push(flat)
-    const children = (childrenOf[u.unit_id] || []).sort((a, b) => (a.seq || 0) - (b.seq || 0))
+    // Recurse into children sorted by seq
+    const children = childrenOf[u.unit_id] || []
     children.forEach(child => walk(child, depth + 1, [...path, u.unit_id]))
   }
 
-  roots.forEach(u => walk(u, 0, []))
+  // Walk each group in order: front_matter → content_units → back_matter
+  // Within each group, walk only ROOT units (no parent_id) sorted by seq
+  groups.forEach(group => {
+    const roots = group
+      .filter(u => !u.parent_id)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+    roots.forEach(u => walk(u, 0, []))
+  })
+
   return ordered
 }
