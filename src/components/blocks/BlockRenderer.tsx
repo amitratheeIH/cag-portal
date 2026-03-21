@@ -24,11 +24,14 @@ function getFnRefs(blockId: string): FnRef[] { return _fnIdx[blockId] || [] }
 // ── HTML safety ───────────────────────────────────────────────
 function safe(s: string): string {
   if (!s) return ''
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/&lt;(\\/?(strong|em|u|sup|sub|del|code|mark|br)(\\s[^>]*)?)&gt;/gi, '<$1>')
+  // Escape all HTML
+  let r = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // Restore safe inline tags: strong, em, u, sup, sub, del, code, mark, br
+  const tag = '(strong|em|u|sup|sub|del|code|mark|br)'
+  r = r.replace(new RegExp('&lt;(' + tag + ')(\\s[^>]*)?&gt;', 'gi'), '<$1$3>')
+  r = r.replace(new RegExp('&lt;/(' + tag + ')&gt;', 'gi'), '</$1>')
+  r = r.replace(/&lt;br\s*&gt;/gi, '<br>')
+  return r
 }
 function ml_s(obj: Record<string,string> | string | undefined | null): string {
   if (!obj) return ''
