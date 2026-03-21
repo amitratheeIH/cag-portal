@@ -266,7 +266,7 @@ function Sig({ block }: { block: ContentBlock }) {
   return (
     <div style={{margin:'24px 0',padding:'16px',border:'1px solid var(--rule)',borderRadius:'4px',background:'#fafaf8'}}>
       <div style={{display:'flex',flexWrap:'wrap',gap:'20px'}}>
-        {sigs.map((s: Record<string,unknown>,i:number)=>(
+        {(sigs as unknown[]).map((sig,i:number)=>{ const s = sig as Record<string,unknown>; return (
           <div key={i} style={{flex:1,minWidth:'200px'}}>
             <div style={{fontFamily:'system-ui',fontSize:'9px',fontWeight:700,letterSpacing:'.8px',textTransform:'uppercase',color:'var(--ink3)',marginBottom:'6px'}}>{roleLabels[s.role as string]||s.role as string||''}</div>
             <div style={{height:'48px',borderBottom:'1px solid var(--rule)',marginBottom:'8px'}}/>
@@ -274,7 +274,7 @@ function Sig({ block }: { block: ContentBlock }) {
             {s.designation&&<div style={{fontSize:'13px',color:'var(--ink2)',marginTop:'2px'}}>{ml_s(s.designation as Record<string,string>)}</div>}
             {s.date&&<div style={{fontFamily:'system-ui',fontSize:'12px',color:'var(--ink3)',marginTop:'3px'}}>{s.date as string}</div>}
           </div>
-        ))}
+        ); })}
       </div>
     </div>
   )
