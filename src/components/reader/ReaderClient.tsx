@@ -222,7 +222,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         </div>
 
         {/* Content — flex:1 + overflow:auto = exactly fills remaining space */}
-        <div ref={contentRef} style={{flex:1,overflowY:'auto',background:'#edeae4',minHeight:0}}>
+        <div ref={contentRef} style={{flex:1,overflowY:'auto',background:'#edeae4',minHeight:0,scrollBehavior:'smooth'}}>
           {current && (
             <ChapterPage
               unit={current} sections={sections} flatUnits={flatUnits}
@@ -389,12 +389,13 @@ function FnList({ footnotes }: { footnotes: Fn[] }) {
         const text = typeof fn.text==='string'?fn.text:(fn.text as Record<string,string>)?.en||Object.values(fn.text||{})[0] as string||''
         const fnId = `fn-${fn.footnote_id||fn.marker}`
         return (
-          <div key={i} id={fnId} style={{display:'flex',gap:'8px',marginBottom:'6px',fontSize:'13px',lineHeight:1.6}}>
-            <a href={`#fnref-${fn.footnote_id||fn.marker}`}
-               style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'11px',marginTop:'2px',textDecoration:'none',minWidth:'16px'}}>
+          <div key={i} id={fnId} style={{display:'flex',gap:'10px',marginBottom:'8px',lineHeight:1.65,scrollMarginTop:'30px'}}>
+            <a
+               onClick={e=>{e.preventDefault();const el=document.getElementById(`fnref-${fn.footnote_id||fn.marker}`);if(el)el.scrollIntoView({behavior:'smooth',block:'center'});}}
+               style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'13px',marginTop:'1px',textDecoration:'none',minWidth:'18px',cursor:'pointer'}}>
               {fn.marker}
             </a>
-            <span style={{color:'#444',textAlign:'justify',fontFamily:'Georgia,"Times New Roman",serif'}}>{text}</span>
+            <span style={{color:'#444',textAlign:'justify',display:'block',flex:1,fontFamily:'Georgia,"Times New Roman",serif',fontSize:'14px'}}>{text}</span>
           </div>
         )
       })}

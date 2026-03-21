@@ -43,7 +43,7 @@ function stripTags(s: string): string { return (s||'').replace(/<[^>]+>/g, '') }
 // ── Footnote superscript HTML ─────────────────────────────────
 function fnSupHtml(fn: FnRef): string {
   const fnId = `fn-${fn.footnote_id || fn.marker}`
-  return `<sup id="fnref-${fn.footnote_id||fn.marker}" style="color:#8b1a1a;font-size:10px;font-weight:700;line-height:0;font-family:system-ui"><a href="#${fnId}" style="color:#8b1a1a;text-decoration:none">${fn.marker}</a></sup>`
+  return `<sup id="fnref-${fn.footnote_id||fn.marker}" style="color:#8b1a1a;font-size:13px;font-weight:700;line-height:0;font-family:system-ui;cursor:pointer" onclick="var el=document.getElementById('${fnId}');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}">${fn.marker}</sup>`
 }
 
 // ── Inject a superscript at char offset (anchor_char_end) into raw HTML text ──
@@ -346,7 +346,7 @@ function Richbox({ block }: { block: ContentBlock }) {
               const text = getInlineFnText(fn)
               return (
                 <div key={i} id={`fn-${fn.footnote_id||fn.marker}`} style={{display:'flex',gap:'6px',marginBottom:'4px',fontSize:'13px'}}>
-                  <a href={`#fnref-${fn.footnote_id||fn.marker}`} style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'11px',textDecoration:'none'}}>{fn.marker}</a>
+                  <a href={`#fnref-${fn.footnote_id||fn.marker}`} style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'13px',textDecoration:'none'}}>{fn.marker}</a>
                   <span style={{color:'#444'}}>{text}</span>
                 </div>
               )
@@ -375,7 +375,7 @@ function RBItem({ item, partOffsets, getFnsForPart }: {
     const fnsHere = po ? getFnsForPart(po.start, po.end) : []
     let html = safe(ml_s(item.text as Record<string,string>))
     if (fnsHere.length > 0) html = injectAllSups(html, fnsHere, po.start)
-    return <p style={{marginBottom:'8px',textAlign:'justify'}} dangerouslySetInnerHTML={{__html: html}}/>
+    return <p style={{marginBottom:'8px',textAlign:'justify',fontFamily:'Georgia,"Times New Roman",serif'}} dangerouslySetInnerHTML={{__html: html}}/>
   }
   if (item.type === 'heading') {
     return <div style={{fontWeight:700,margin:'10px 0 6px',fontSize:'15px'}} dangerouslySetInnerHTML={{__html: safe(ml_s(item.text as Record<string,string>))}}/>
@@ -469,26 +469,16 @@ function Table({ block, folderPath }: { block: ContentBlock; folderPath?: string
 
       {source && <div style={{fontFamily:'system-ui',fontSize:'11px',color:'#666',padding:'6px 14px 10px',borderTop:'1px solid #e8e4dc'}}><b>Source:</b> {source}</div>}
 
-      {/* Dataset footnotes inside the card with col/row anchor context */}
+      {/* Dataset footnotes inside the card */}
       {ds?.footnotes && ds.footnotes.length > 0 && (
         <div style={{padding:'8px 14px 12px',borderTop:'1px solid #e8e4dc'}}>
           {ds.footnotes.map((fn, fi) => {
             const text = ml_s(fn.text as Record<string,string>|string)
-            const col = fn.anchor_col_id
-              ? (ds.columns||[]).find((c: DatasetCol) => c.id === fn.anchor_col_id)
-              : null
-            const colLabel = col ? ml_s((col as DatasetCol).label as Record<string,string>|string) : fn.anchor_col_id
+            const fnId = `tbl-fn-${fi}-${fn.marker}`
             return (
-              <div key={fi} style={{display:'flex',gap:'8px',marginBottom:'5px',fontSize:'12px',fontFamily:'system-ui',lineHeight:1.5}}>
-                <span style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,minWidth:'16px'}}>{fn.marker}</span>
-                <span style={{color:'#555'}}>
-                  {colLabel && (
-                    <span style={{background:'#f0f4fa',color:'#1a3a6b',border:'1px solid #d0ddf0',borderRadius:'3px',padding:'0 4px',fontSize:'10.5px',marginRight:'5px',fontWeight:600}}>
-                      {colLabel}{fn.anchor_row_id ? ` · ${fn.anchor_row_id}` : ''}
-                    </span>
-                  )}
-                  {text}
-                </span>
+              <div key={fi} id={fnId} style={{display:'flex',gap:'8px',marginBottom:'6px',fontSize:'13px',lineHeight:1.6,scrollMarginTop:'20px'}}>
+                <span style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'13px',minWidth:'16px'}}>{fn.marker}</span>
+                <span style={{color:'#444',textAlign:'justify',display:'block',fontFamily:'Georgia,"Times New Roman",serif'}}>{text}</span>
               </div>
             )
           })}
@@ -562,8 +552,10 @@ function DatasetTable({ ds }: { ds: DatasetJson }) {
 
                   // Footnote marker in cell
                   const fnMark = row.row_id ? fnMarkers[`${row.row_id}|${col.id}`] : undefined
+                  const fnIdx2 = (ds.footnotes||[]).findIndex(f => f.marker === fnMark)
+                  const fnId2 = `tbl-fn-${fnIdx2}-${fnMark}`
                   const fnSup = fnMark
-                    ? `<sup style="color:#8b1a1a;font-size:10px;font-weight:700;font-family:system-ui">${fnMark}</sup>`
+                    ? `<sup style="color:#8b1a1a;font-size:13px;font-weight:700;font-family:system-ui;cursor:pointer"><a href="#${fnId2}" style="color:#8b1a1a;text-decoration:none">${fnMark}</a></sup>`
                     : ''
 
                   return (
