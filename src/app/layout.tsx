@@ -75,23 +75,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         {/* ── Footer ──────────────────────────────────────── */}
         <footer
-          className="mt-16 border-t py-8 px-6"
-          style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+          id="site-footer"
           role="contentinfo"
+          style={{
+            borderTop: '1px solid var(--rule)',
+            background: 'var(--navy)',
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap',
+          }}
         >
-          <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div>
-              <div className="font-serif font-semibold text-navy text-sm">
-                CAG Audit Reports Portal
-              </div>
-              <div className="text-xs text-cag-text3 mt-1">
-                Comptroller and Auditor General of India
-              </div>
-            </div>
-            <div className="text-xs text-cag-text3">
-              Compliant with GIGW 3.0 Guidelines &nbsp;·&nbsp; NIC India
-            </div>
-          </div>
+          <span style={{fontFamily:'system-ui',fontSize:'11px',color:'rgba(255,255,255,0.7)',fontWeight:500}}>
+            CAG Audit Reports Portal &nbsp;·&nbsp; Comptroller and Auditor General of India
+          </span>
+          <span style={{fontFamily:'system-ui',fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>
+            GIGW 3.0 Compliant
+          </span>
         </footer>
       </body>
     </html>
