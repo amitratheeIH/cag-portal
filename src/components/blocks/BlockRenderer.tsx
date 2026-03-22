@@ -307,11 +307,15 @@ function List({ block }: { block: ContentBlock }) {
         const subs = item.sub_items || []
         const pnum = item.para_number
 
+        // Normalise ordered marker: strip trailing dot, always add one consistently
+        const rawMarker = pnum || String(i + 1)
+        const marker = isOrd ? rawMarker.replace(/\.+$/, '') + '.' : ''
+
         return (
-          <li key={i} style={{display:'flex',gap:'12px',marginBottom:'10px',fontSize:'16px',lineHeight:'1.72',textAlign:'justify',alignItems:'flex-start'}}>
+          <li key={i} style={{display:'flex',gap:'10px',marginBottom:'10px',fontSize:'16px',lineHeight:'1.72',textAlign:'justify',alignItems:'baseline'}}>
             {isOrd
-              ? <span style={{flexShrink:0,fontWeight:600,color:'var(--ink2)',minWidth:'20px',textAlign:'right',fontFamily:'system-ui',fontSize:'15px'}}>{pnum||`${i+1}.`}</span>
-              : <span style={{flexShrink:0,width:'6px',height:'6px',borderRadius:'50%',background:'var(--ink2)',marginTop:'0.67em',display:'block'}}/>
+              ? <span style={{flexShrink:0,fontWeight:400,color:'var(--ink)',minWidth:'24px',textAlign:'right',fontFamily:'Georgia,"Times New Roman",serif',fontSize:'16px'}}>{marker}</span>
+              : <span style={{flexShrink:0,width:'6px',height:'6px',borderRadius:'50%',background:'var(--ink2)',display:'inline-block',position:'relative',top:'0.18em'}}/>
             }
             <div style={{flex:1}}>
               {!isOrd && pnum && <span style={{fontFamily:'system-ui',fontSize:'10.5px',color:'var(--ink3)',marginRight:'8px'}}>{pnum}</span>}
