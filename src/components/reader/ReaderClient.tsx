@@ -217,7 +217,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         })
         if (visible.size === 0) return
         // Pick the section whose top is closest to (but below) the nav bar
-        const topmost = [...visible.entries()].sort((a, b) => a[1] - b[1])[0]
+        const topmost = Array.from(visible.entries()).sort((a, b) => a[1] - b[1])[0]
         if (topmost) setActiveSectionId(topmost[0])
       },
       {
