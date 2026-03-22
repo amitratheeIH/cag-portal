@@ -127,3 +127,34 @@ html { scroll-behavior: smooth; }
     z-index: 50;
   }
 }
+
+/* ── Reader mode — applied to .reader-mode wrapper ──────── */
+.reader-mode {
+  --rm-body:   1.15;   /* scale factor on body text */
+  --rm-lh:     1.95;   /* line height */
+}
+
+/* Body text: paragraphs, list items, richbox bullets */
+.reader-mode p,
+.reader-mode li,
+.reader-mode .rec-text { font-size: 18px !important; line-height: 1.95 !important; }
+
+/* Section headings */
+.reader-mode h2, .reader-mode .sec-title { font-size: 23px !important; }
+.reader-mode h3, .reader-mode .sec-title-sm { font-size: 20px !important; }
+
+/* Chapter H1 */
+.reader-mode h1 { font-size: 30px !important; }
+
+/* Recommendation / finding blocks */
+.reader-mode .rec-body { font-size: 18px !important; line-height: 1.9 !important; }
+
+/* General font-size inheritance for divs with inline font-size: 16px */
+.reader-mode [style*="font-size: 16px"],
+.reader-mode [style*="font-size:16px"] { font-size: 18px !important; line-height: 1.95 !important; }
+
+.reader-mode [style*="font-size: 15px"],
+.reader-mode [style*="font-size:15px"] { font-size: 17px !important; }
+
+.reader-mode [style*="font-size: 14.5px"],
+.reader-mode [style*="font-size:14.5px"] { font-size: 16.5px !important; }

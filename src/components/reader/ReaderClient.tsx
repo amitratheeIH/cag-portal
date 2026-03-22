@@ -422,14 +422,14 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
   return (
     <div style={{padding:'0 0 48px'}}>
       {/* Paper — no minHeight, just natural flow */}
-      <div style={{
-        maxWidth: readerMode ? '900px' : '800px', margin:'0 auto',
-        background:'#fff',
-        borderLeft:'1px solid #d8d4ce', borderRight:'1px solid #d8d4ce',
-        fontSize: readerMode ? '17.5px' : undefined,
-        lineHeight: readerMode ? 1.9 : undefined,
-        transition: 'max-width .3s ease, font-size .2s ease',
-      }}>
+      <div
+        className={readerMode ? 'reader-mode' : ''}
+        style={{
+          maxWidth: readerMode ? '900px' : '800px', margin:'0 auto',
+          background:'#fff',
+          borderLeft:'1px solid #d8d4ce', borderRight:'1px solid #d8d4ce',
+          transition: 'max-width .3s ease',
+        }}>
         <div className="reader-paper" style={{padding:'52px 68px 56px'}}>
 
           {/* Header */}
