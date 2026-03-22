@@ -98,6 +98,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const [chapterIdx, setChapterIdx] = useState(0)
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [annVisible, setAnnVisibleState] = useState(false)
+  const [blockVersion, setBlockVersion] = useState(0)  // increments when fn/ann/ref indexes update
   const [readerMode, setReaderMode] = useState(false)
 
   const toggleAnnotations = () => {
@@ -187,12 +188,26 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   // Wire global nav callback so inline ref links can navigate chapters
   useEffect(() => {
     const nav = (uid: string) => {
+      // First try: exact unit_id match
       const unit = flatUnits.find(u => u.unit_id === uid)
       if (unit) {
         const rootUid = unit.parent_id || unit.unit_id
         const idx = chapters.findIndex(ch => ch.unit_id === rootUid)
         if (idx >= 0) { goTo(idx, uid !== rootUid ? uid : undefined); return }
       }
+      // Second try: uid is a block_id like SEC12-L001 — extract unit by stripping block suffix
+      // Block IDs follow pattern: {unit_id}-{BLOCKTYPE}{NNN}
+      // Strip last segment (e.g. -L001, -P002, -T001) to get unit_id
+      const unitFromBlock = uid.replace(/-[A-Z]+\d+$/, '')
+      if (unitFromBlock !== uid) {
+        const u2 = flatUnits.find(u => u.unit_id === unitFromBlock)
+        if (u2) {
+          const rootUid = u2.parent_id || u2.unit_id
+          const idx = chapters.findIndex(ch => ch.unit_id === rootUid)
+          if (idx >= 0) { goTo(idx, u2.unit_id !== rootUid ? u2.unit_id : undefined); return }
+        }
+      }
+      // Fallback: chapter that contains uid as prefix
       const chIdx = chapters.findIndex(ch => {
         const allDesc = [ch.unit_id, ...getDescendantUids(ch.unit_id, flatUnits)]
         return allDesc.some(duid => uid.startsWith(duid))
@@ -227,6 +242,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       })
     })
     setRefIndex(refIdx)
+    setBlockVersion(v => v + 1)  // trigger re-render so blocks show refs
   }, [chapterIdx, chapters, flatUnits, initialData.blocks])
 
   useEffect(() => {
@@ -415,7 +431,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,scrollBehavior:'smooth'}}>
           {current && (
             <ChapterPage
-              key={current.unit_id}
+              key={current.unit_id + '-' + blockVersion}
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
               prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
