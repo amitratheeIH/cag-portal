@@ -56,15 +56,15 @@ function getRefs(blockId: string): RefObj[] { return _refIdx[blockId] || [] }
 // Derive navigation target from a reference object
 function refHref(ref: RefObj): string {
   const target = ref.target || ''
-  // product_id/unit_id  → sec-{unit_id}
+  // target format is "product_id/unit_id" or "product_id/block_id"
+  // target value is "AR02-CAG-2025-UT-DL/AR02-CAG-2025-UT-DL-ANX01"
+  // so the id is always the LAST segment after the last slash
+  const id = target.includes('/') ? target.split('/').pop() || target : target
   if (ref.target_format === 'product_id/unit_id') {
-    const uid = target.includes('/') ? target.split('/').slice(1).join('/') : target
-    return `#sec-${uid}`
+    return `#sec-${id}`
   }
-  // product_id/block_id → block-{block_id}
   if (ref.target_format === 'product_id/block_id') {
-    const bid = target.includes('/') ? target.split('/').slice(1).join('/') : target
-    return `#block-${bid}`
+    return `#block-${id}`
   }
   return '#'
 }
@@ -298,7 +298,7 @@ function Para({ block }: { block: ContentBlock }) {
   return (
     <div style={{marginBottom:'14px'}}>
       {badge}
-      <p style={style} dangerouslySetInnerHTML={{__html: pnumHtml + html}} />
+      <p id={`block-${block.block_id}`} style={style} dangerouslySetInnerHTML={{__html: pnumHtml + html}} />
     </div>
   )
 }
@@ -370,12 +370,16 @@ function List({ block }: { block: ContentBlock }) {
               <span dangerouslySetInnerHTML={{__html: html}}/>
               {subs.length > 0 && (
                 <ul style={{listStyle:'none',padding:0,margin:'6px 0 2px 18px'}}>
-                  {subs.map((s: {text: Record<string,string>}, j: number) => (
-                    <li key={j} style={{display:'flex',gap:'10px',fontSize:'14.5px',lineHeight:'1.65',marginBottom:'5px',color:'var(--ink2)'}}>
-                      <span style={{color:'var(--ink3)',flexShrink:0}}>–</span>
-                      <span dangerouslySetInnerHTML={{__html: safe(ml_s(s.text))}}/>
-                    </li>
-                  ))}
+                  {subs.map((s: {text: Record<string,string>}, j: number) => {
+                    let subHtml = safe(ml_s(s.text))
+                    if (itemRefs.length > 0) subHtml = injectRefs(subHtml, itemRefs)
+                    return (
+                      <li key={j} style={{display:'flex',gap:'10px',fontSize:'14.5px',lineHeight:'1.65',marginBottom:'5px',color:'var(--ink2)'}}>
+                        <span style={{color:'var(--ink3)',flexShrink:0}}>–</span>
+                        <span dangerouslySetInnerHTML={{__html: subHtml}}/>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
