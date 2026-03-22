@@ -720,12 +720,13 @@ function TOCSectionItem({ sec, flatUnits, idx, isChapterActive, activeSectionId,
         borderLeft:`3px solid ${isActiveSection?'#c47a20':isChapterActive?'#e4e0d8':'transparent'}`,
         background: isActiveSection ? '#edf1f8' : 'transparent',
         color: isActiveSection ? '#1a3a6b' : isChapterActive ? '#555' : '#aaa',
-        cursor:'pointer', lineHeight:1.4,
+        cursor:'pointer', lineHeight:1.5,
+        wordBreak:'break-word', whiteSpace:'normal',
       }}>
         {sec.para_number && (
           <span style={{color:'#c47a20',fontSize:'10px',fontWeight:600,flexShrink:0}}>{sec.para_number}</span>
         )}
-        <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+        <span style={{wordBreak:'break-word',whiteSpace:'normal'}}>
           {ml(sec.title)||sec.unit_id}
         </span>
       </button>
