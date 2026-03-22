@@ -51,6 +51,10 @@ interface RefObj {
 }
 let _refIdx: Record<string, RefObj[]> = {}
 export function setRefIndex(idx: Record<string, RefObj[]>) { _refIdx = idx }
+
+// Navigation callback — wired by ReaderClient so ref links can change chapter
+let _navToUnit: ((uid: string) => void) | null = null
+export function setNavCallback(fn: (uid: string) => void) { _navToUnit = fn }
 function getRefs(blockId: string): RefObj[] { return _refIdx[blockId] || [] }
 
 // Derive navigation target from a reference object
@@ -81,11 +85,13 @@ function injectRefs(html: string, refs: RefObj[]): string {
     if (!label) return
     const href = refHref(ref)
     if (href === '#') return
-    // Escape label for use in regex
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     try {
       const rx = new RegExp(escaped, 'g')
-      result = result.replace(rx, `<a href="${href}" style="color:var(--navy);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer" onclick="event.preventDefault();const el=document.querySelector('${href}');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})">${label}</a>`)
+      // onclick: try to find element in current DOM first; if not found, navigate to the target unit
+      const targetUid = ref.target?.split('/').pop() || ''
+      const onclick = \`event.preventDefault();(function(){var el=document.getElementById('${href.slice(1)}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}else if(window.__cagNav){window.__cagNav('${targetUid}');}})();\`
+      result = result.replace(rx, \`<a href="${href}" style="color:var(--navy);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer" onclick="\${onclick}">${label}</a>\`)
     } catch { /* ignore regex errors */ }
   })
   return result

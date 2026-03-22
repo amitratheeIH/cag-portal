@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
-import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex, setAnnVisible, getAnnVisible, setRefIndex } from '@/components/blocks/BlockRenderer'
+import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex, setAnnVisible, getAnnVisible, setRefIndex, setNavCallback } from '@/components/blocks/BlockRenderer'
 
 // ── Footnote types ────────────────────────────────────────────
 interface Fn {
@@ -135,6 +135,28 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const contentRef = useRef<HTMLDivElement>(null)
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
+
+  // Wire global nav callback so inline ref links can navigate chapters
+  // window.__cagNav is set for use in dangerouslySetInnerHTML onclick handlers
+  useEffect(() => {
+    const nav = (uid: string) => {
+      // uid could be a unit_id or block_id — find the chapter that contains it
+      const unit = flatUnits.find(u => u.unit_id === uid)
+      if (unit) {
+        const rootUid = unit.parent_id || unit.unit_id
+        const idx = chapters.findIndex(c => c.unit_id === rootUid)
+        if (idx >= 0) { goTo(idx, uid !== rootUid ? uid : undefined); return }
+      }
+      // Try as block_id — navigate to the unit containing it
+      const chIdx = chapters.findIndex(ch => {
+        const allDesc = [ch.unit_id, ...getDescendantUids(ch.unit_id, flatUnits)]
+        return allDesc.some(duid => uid.startsWith(duid))
+      })
+      if (chIdx >= 0) goTo(chIdx)
+    }
+    setNavCallback(nav)
+    ;(window as unknown as Record<string,unknown>).__cagNav = nav
+  }, [flatUnits, chapters, goTo])
 
   useEffect(() => {
     const units = buildFlatUnitList(initialData.structure)
