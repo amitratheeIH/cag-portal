@@ -98,6 +98,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const [chapterIdx, setChapterIdx] = useState(0)
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [annVisible, setAnnVisibleState] = useState(false)
+  const [readerMode, setReaderMode] = useState(false)
 
   const toggleAnnotations = () => {
     const next = !annVisible
@@ -285,52 +286,76 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       {/* ── Main ────────────────────────────────── */}
       <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
 
-        {/* Nav bar — flexShrink:0 keeps it always visible, never scrolled away */}
+        {/* ── Nav bar ──────────────────────────────────────────── */}
         <div style={{
-          height:'44px', flexShrink:0, display:'flex',
-          alignItems:'center', justifyContent:'space-between',
-          padding:'0 12px', borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
-          zIndex:10, position:'relative',
+          height:'44px', flexShrink:0, display:'flex', alignItems:'center',
+          justifyContent:'space-between', padding:'0 10px',
+          borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
+          zIndex:10, position:'relative', gap:'6px',
         }}>
-          <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0,flex:1}}>
+
+          {/* Left: TOC toggle + chapter title */}
+          <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
             <button onClick={()=>setTocOpen(v=>!v)}
-              style={{padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#888',borderRadius:'4px',flexShrink:0}}
-              aria-label="Toggle contents">
+              title="Toggle contents"
+              style={{padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#888',borderRadius:'4px',flexShrink:0}}>
               <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
-            <button onClick={toggleAnnotations}
+            {current && (
+              <span style={{fontFamily:'system-ui',fontSize:'11.5px',fontWeight:600,color:'#444',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {ml(current.title)||current.unit_id}
+              </span>
+            )}
+          </div>
+
+          {/* Centre: Prev · counter · Next */}
+          <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
+            <button onClick={()=>goTo(chapterIdx-1)} disabled={!hasPrev}
+              title="Previous"
+              style={{display:'flex',alignItems:'center',padding:'5px 8px',border:'none',background:'none',cursor:hasPrev?'pointer':'default',color:'#666',opacity:hasPrev?1:.3,borderRadius:'4px'}}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#999',minWidth:'32px',textAlign:'center'}}>{chapterIdx+1}/{chapters.length}</span>
+            <button onClick={()=>goTo(chapterIdx+1)} disabled={!hasNext}
+              title="Next"
+              style={{display:'flex',alignItems:'center',padding:'5px 8px',border:'none',background:'none',cursor:hasNext?'pointer':'default',color:'#666',opacity:hasNext?1:.3,borderRadius:'4px'}}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+
+          {/* Right: Reader mode + Annotations */}
+          <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
+            {/* Reader mode toggle */}
+            <button
+              onClick={()=>setReaderMode(v=>!v)}
+              title={readerMode ? 'Exit reader mode' : 'Reader mode — wider text, larger font'}
+              style={{
+                display:'flex',alignItems:'center',gap:'4px',
+                padding:'3px 8px', border:'1px solid', borderRadius:'12px',
+                fontFamily:'system-ui', fontSize:'11px', fontWeight:600,
+                cursor:'pointer', transition:'all .15s',
+                borderColor: readerMode ? '#1a3a6b' : '#ccc',
+                background: readerMode ? '#edf1f8' : 'transparent',
+                color: readerMode ? '#1a3a6b' : '#aaa',
+              }}>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span className="hidden sm:inline">Read</span>
+            </button>
+            {/* Annotations toggle */}
+            <button
+              onClick={toggleAnnotations}
               title={annVisible ? 'Hide annotations' : 'Show annotations'}
               style={{
-                padding:'3px 9px', border:'1px solid', borderRadius:'12px',
+                display:'flex',alignItems:'center',gap:'4px',
+                padding:'3px 8px', border:'1px solid', borderRadius:'12px',
                 fontFamily:'system-ui', fontSize:'11px', fontWeight:600,
-                cursor:'pointer', flexShrink:0, transition:'all .15s',
+                cursor:'pointer', transition:'all .15s',
                 borderColor: annVisible ? '#c47a20' : '#ccc',
                 background: annVisible ? '#fdf4e7' : 'transparent',
                 color: annVisible ? '#c47a20' : '#aaa',
               }}>
-              {annVisible ? '◉' : '○'}<span className='hidden sm:inline'>&nbsp;Annotations</span>
-            </button>
-            <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#aaa',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-              {reportTitle}
-            </span>
-            {current && <>
-              <span style={{color:'#ddd',flexShrink:0}} className="hidden sm:inline">›</span>
-              <span className="hidden sm:inline" style={{fontFamily:'system-ui',fontSize:'11px',color:'#555',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                {ml(current.title)||current.unit_id}
-              </span>
-            </>}
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:'6px',flexShrink:0}}>
-            <button onClick={()=>goTo(chapterIdx-1)} disabled={!hasPrev}
-              style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'#fff',cursor:hasPrev?'pointer':'default',color:'#444',opacity:hasPrev?1:.3}}>
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
-              <span className="hidden sm:inline">Prev</span>
-            </button>
-            <span style={{fontFamily:'system-ui',fontSize:'11px',color:'#ccc'}}>{chapterIdx+1}/{chapters.length}</span>
-            <button onClick={()=>goTo(chapterIdx+1)} disabled={!hasNext}
-              style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 11px',fontFamily:'system-ui',fontSize:'12px',fontWeight:500,border:'1px solid #ccc',borderRadius:'20px',background:'#fff',cursor:hasNext?'pointer':'default',color:'#444',opacity:hasNext?1:.3}}>
-              <span className="hidden sm:inline">Next</span>
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+              <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5z"/></svg>
+              <span className="hidden sm:inline">Ann.</span>
             </button>
           </div>
         </div>
@@ -343,7 +368,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
               prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
-              onNavigate={goTo} chapterIdx={chapterIdx}
+              onNavigate={goTo} chapterIdx={chapterIdx} readerMode={readerMode}
             />
           )}
         </div>
@@ -353,11 +378,11 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx }: {
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode }: {
   unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   prev?: FlatUnit; next?: FlatUnit
-  onNavigate: (i:number, sid?:string)=>void; chapterIdx: number
+  onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean
 }) {
   const uid    = unit.unit_id
   const uFile  = unitFiles[uid] || unit
@@ -398,9 +423,12 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
     <div style={{padding:'0 0 48px'}}>
       {/* Paper — no minHeight, just natural flow */}
       <div style={{
-        maxWidth:'800px', margin:'0 auto',
+        maxWidth: readerMode ? '900px' : '800px', margin:'0 auto',
         background:'#fff',
         borderLeft:'1px solid #d8d4ce', borderRight:'1px solid #d8d4ce',
+        fontSize: readerMode ? '17.5px' : undefined,
+        lineHeight: readerMode ? 1.9 : undefined,
+        transition: 'max-width .3s ease, font-size .2s ease',
       }}>
         <div className="reader-paper" style={{padding:'52px 68px 56px'}}>
 
