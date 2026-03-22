@@ -201,7 +201,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     const refIdx: Record<string, {type:string;target:string;target_format:string;label?:Record<string,string>|string;relationship_type?:string}[]> = {}
     chapterUids.forEach(uid => {
       ;(initialData.blocks[uid] || []).forEach(block => {
-        const refs = (block as Record<string,unknown>).references as {type:string;target:string;target_format:string;label?:Record<string,string>|string;relationship_type?:string}[] | undefined
+        const refs = (block as unknown as Record<string,unknown>).references as {type:string;target:string;target_format:string;label?:Record<string,string>|string;relationship_type?:string}[] | undefined
         if (refs?.length) refIdx[block.block_id] = refs
       })
     })
