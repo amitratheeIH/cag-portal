@@ -158,3 +158,24 @@ html { scroll-behavior: smooth; }
 
 .reader-mode [style*="font-size: 14.5px"],
 .reader-mode [style*="font-size:14.5px"] { font-size: 16.5px !important; }
+
+/* ── Reader fullscreen mode ──────────────────────────────── */
+html.reader-fullscreen header[role="banner"] {
+  transform: translateY(-100%);
+  transition: transform .25s ease;
+}
+html.reader-fullscreen #page-content {
+  margin-top: 0 !important;
+  transition: margin-top .25s ease;
+}
+/* Reader pane fills full viewport height */
+html.reader-fullscreen .reader-root {
+  height: 100vh !important;
+}
+/* Smooth transition back */
+header[role="banner"] {
+  transition: transform .25s ease;
+}
+#page-content {
+  transition: margin-top .25s ease;
+}

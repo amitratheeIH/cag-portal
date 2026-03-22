@@ -105,6 +105,20 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setAnnVisible(next)
     setAnnVisibleState(next)
   }
+
+  const toggleReaderMode = () => {
+    const next = !readerMode
+    setReaderMode(next)
+    if (next) {
+      // Enter reader mode: close TOC, hide site header
+      setTocOpen(false)
+      document.documentElement.classList.add('reader-fullscreen')
+    } else {
+      // Exit: restore TOC on desktop, show header
+      if (!isMobile) setTocOpen(true)
+      document.documentElement.classList.remove('reader-fullscreen')
+    }
+  }
   const [isMobile, setIsMobile] = useState(false)
   const [tocOpen, setTocOpen] = useState(true)
 
@@ -189,10 +203,16 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.key === 'ArrowRight') goTo(chapterIdx + 1)
       if (e.key === 'ArrowLeft')  goTo(chapterIdx - 1)
+      if (e.key === 'Escape' && readerMode) toggleReaderMode()
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [chapterIdx, goTo])
+  }, [chapterIdx, goTo, readerMode])
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => { document.documentElement.classList.remove('reader-fullscreen') }
+  }, [])
 
   // Hooks must all come before any conditional return
   const current = useMemo(() => chapters[chapterIdx], [chapters, chapterIdx])
@@ -249,7 +269,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   )
 
   return (
-    <div style={{display:'flex', height:'calc(100vh - 64px)', minHeight:'-webkit-fill-available', overflow:'hidden'}} className="reader-root">
+    <div style={{display:'flex', height: readerMode ? '100vh' : 'calc(100vh - 64px)', minHeight:'-webkit-fill-available', overflow:'hidden', transition:'height .25s ease'}} className="reader-root">
 
       {/* ── TOC ─────────────────────────────────── */}
       {/* Overlay backdrop on mobile when TOC is open */}
@@ -327,8 +347,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
             {/* Reader mode toggle */}
             <button
-              onClick={()=>setReaderMode(v=>!v)}
-              title={readerMode ? 'Exit reader mode' : 'Reader mode — wider text, larger font'}
+              onClick={toggleReaderMode}
+              title={readerMode ? 'Exit reader mode (Esc)' : 'Reader mode — focus view, larger text'}
               style={{
                 display:'flex',alignItems:'center',gap:'4px',
                 padding:'3px 8px', border:'1px solid', borderRadius:'12px',
