@@ -88,10 +88,11 @@ function injectRefs(html: string, refs: RefObj[]): string {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     try {
       const rx = new RegExp(escaped, 'g')
-      // onclick: try to find element in current DOM first; if not found, navigate to the target unit
-      const targetUid = ref.target?.split('/').pop() || ''
-      const onclick = \`event.preventDefault();(function(){var el=document.getElementById('${href.slice(1)}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}else if(window.__cagNav){window.__cagNav('${targetUid}');}})();\`
-      result = result.replace(rx, \`<a href="${href}" style="color:var(--navy);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer" onclick="\${onclick}">${label}</a>\`)
+      const targetUid = (ref.target || '').split('/').pop() || ''
+      const elemId = href.slice(1)
+      const onclick = 'event.preventDefault();(function(){var el=document.getElementById(' + JSON.stringify(elemId) + ');if(el){el.scrollIntoView({behavior:"smooth",block:"start"});}else if(window.__cagNav){window.__cagNav(' + JSON.stringify(targetUid) + ');}})();'
+      const aTag = '<a href="' + href + '" style="color:var(--navy);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer" onclick="' + onclick.replace(/"/g, '&quot;') + '">' + label + '</a>'
+      result = result.replace(rx, aTag)
     } catch { /* ignore regex errors */ }
   })
   return result
