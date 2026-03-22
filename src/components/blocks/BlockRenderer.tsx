@@ -41,6 +41,56 @@ function getAnns(blockId: string): AnnRef[] {
   return _annIdx[blockId] || []
 }
 
+// ── Reference index ───────────────────────────────────────────
+interface RefObj {
+  type: string
+  target: string
+  target_format: string
+  label?: Record<string,string> | string
+  relationship_type?: string
+}
+let _refIdx: Record<string, RefObj[]> = {}
+export function setRefIndex(idx: Record<string, RefObj[]>) { _refIdx = idx }
+function getRefs(blockId: string): RefObj[] { return _refIdx[blockId] || [] }
+
+// Derive navigation target from a reference object
+function refHref(ref: RefObj): string {
+  const target = ref.target || ''
+  // product_id/unit_id  → sec-{unit_id}
+  if (ref.target_format === 'product_id/unit_id') {
+    const uid = target.includes('/') ? target.split('/').slice(1).join('/') : target
+    return `#sec-${uid}`
+  }
+  // product_id/block_id → block-{block_id}
+  if (ref.target_format === 'product_id/block_id') {
+    const bid = target.includes('/') ? target.split('/').slice(1).join('/') : target
+    return `#block-${bid}`
+  }
+  return '#'
+}
+
+// Inject reference hyperlinks into rendered HTML
+// For each reference with a label, find the label text and wrap in <a>
+function injectRefs(html: string, refs: RefObj[]): string {
+  if (!refs.length) return html
+  let result = html
+  refs.forEach(ref => {
+    const label = typeof ref.label === 'string'
+      ? ref.label
+      : (ref.label as Record<string,string>)?.en || Object.values(ref.label || {})[0] as string || ''
+    if (!label) return
+    const href = refHref(ref)
+    if (href === '#') return
+    // Escape label for use in regex
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    try {
+      const rx = new RegExp(escaped, 'g')
+      result = result.replace(rx, `<a href="${href}" style="color:var(--navy);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer" onclick="event.preventDefault();const el=document.querySelector('${href}');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})">${label}</a>`)
+    } catch { /* ignore regex errors */ }
+  })
+  return result
+}
+
 // Annotation styles per type
 const ANN_STYLES: Record<string, {bg:string; title:string}> = {
   audit_observation:   { bg: 'rgba(244,121,32,0.18)', title: 'Audit Observation' },
@@ -239,13 +289,11 @@ function Para({ block }: { block: ContentBlock }) {
   // Inject annotations first (as background), then footnote sups on top
   const fns  = getFnRefs(block.block_id || '')
   const anns = getAnns(block.block_id || '')
+  const refs = getRefs(block.block_id || '')
   let html = safe(rawText)
-  if (anns.length > 0) {
-    html = injectAnnotations(html, anns, 0)
-  }
-  if (fns.length > 0) {
-    html = injectAllSups(html, fns, 0)
-  }
+  if (anns.length > 0) { html = injectAnnotations(html, anns, 0) }
+  if (refs.length > 0) { html = injectRefs(html, refs) }
+  if (fns.length > 0)  { html = injectAllSups(html, fns, 0) }
 
   return (
     <div style={{marginBottom:'14px'}}>
@@ -299,10 +347,10 @@ function List({ block }: { block: ContentBlock }) {
           return end > itemStart && end <= itemEnd
         })
 
+        const itemRefs = getRefs(block.block_id || '')
         let html = safe(rawText)
-        if (itemFns.length > 0) {
-          html = injectAllSups(html, itemFns, itemStart)
-        }
+        if (itemRefs.length > 0) { html = injectRefs(html, itemRefs) }
+        if (itemFns.length > 0)  { html = injectAllSups(html, itemFns, itemStart) }
 
         const subs = item.sub_items || []
         const pnum = item.para_number

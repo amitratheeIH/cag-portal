@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
-import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex, setAnnVisible, getAnnVisible } from '@/components/blocks/BlockRenderer'
+import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex, setAnnVisible, getAnnVisible, setRefIndex } from '@/components/blocks/BlockRenderer'
 
 // ── Footnote types ────────────────────────────────────────────
 interface Fn {
@@ -196,6 +196,16 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       })
     })
     setAnnIndex(annIdx)
+
+    // Build reference index: block_id → references[]
+    const refIdx: Record<string, {type:string;target:string;target_format:string;label?:Record<string,string>|string;relationship_type?:string}[]> = {}
+    chapterUids.forEach(uid => {
+      ;(initialData.blocks[uid] || []).forEach(block => {
+        const refs = (block as Record<string,unknown>).references as {type:string;target:string;target_format:string;label?:Record<string,string>|string;relationship_type?:string}[] | undefined
+        if (refs?.length) refIdx[block.block_id] = refs
+      })
+    })
+    setRefIndex(refIdx)
   }, [chapterIdx, chapters, flatUnits, initialData.blocks])
 
   useEffect(() => {
