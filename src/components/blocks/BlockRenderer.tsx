@@ -90,8 +90,8 @@ function injectRefs(html: string, refs: RefObj[]): string {
       const rx = new RegExp(escaped, 'g')
       const targetUid = (ref.target || '').split('/').pop() || ''
       const elemId = href.slice(1)
-      const onclick = 'event.preventDefault();(function(){var el=document.getElementById(' + JSON.stringify(elemId) + ');if(el){el.scrollIntoView({behavior:"smooth",block:"start"});}else if(window.__cagNav){window.__cagNav(' + JSON.stringify(targetUid) + ');}})();'
-      const aTag = '<a href="' + href + '" style="color:var(--navy);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer" onclick="' + onclick.replace(/"/g, '&quot;') + '">' + label + '</a>'
+      const onclick = "event.preventDefault();(function(){var el=document.getElementById('" + elemId + "');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}else if(window.__cagNav){window.__cagNav('" + targetUid + "');}})();"
+      const aTag = '<a href="' + href + '" style="color:var(--navy);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer" onclick=\'' + onclick + '\'>'+label+'</a>'
       result = result.replace(rx, aTag)
     } catch { /* ignore regex errors */ }
   })
