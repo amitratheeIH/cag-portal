@@ -193,6 +193,58 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('keydown', h)
   }, [chapterIdx, goTo])
 
+  // ── Scroll-spy: update activeSectionId as user scrolls ───────
+  useEffect(() => {
+    if (!contentRef.current || sections.length === 0) {
+      setActiveSectionId(null)
+      return
+    }
+    const root = contentRef.current
+
+    // Track which sections are visible — pick the topmost one
+    const visible = new Map<string, number>()
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          const uid = entry.target.getAttribute('data-sec-id')
+          if (!uid) return
+          if (entry.isIntersecting) {
+            visible.set(uid, entry.boundingClientRect.top)
+          } else {
+            visible.delete(uid)
+          }
+        })
+        if (visible.size === 0) return
+        // Pick the section whose top is closest to (but below) the nav bar
+        const topmost = [...visible.entries()].sort((a, b) => a[1] - b[1])[0]
+        if (topmost) setActiveSectionId(topmost[0])
+      },
+      {
+        root,
+        // Top margin: -64px for nav bar, bottom: small negative to trigger early
+        rootMargin: '-56px 0px -60% 0px',
+        threshold: 0,
+      }
+    )
+
+    // Observe all section elements in current chapter
+    const sectionUids = sections.map(s => s.unit_id)
+    sectionUids.forEach(uid => {
+      const el = root.querySelector(`[data-sec-id="${uid}"]`)
+      if (el) observer.observe(el)
+    })
+
+    return () => observer.disconnect()
+  }, [sections, chapterIdx])
+
+  // Auto-scroll TOC to keep active section visible
+  useEffect(() => {
+    if (!activeSectionId) return
+    const el = document.getElementById(`toc-${activeSectionId}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [activeSectionId])
+
   // Hooks must all come before any conditional return
   const current = useMemo(() => chapters[chapterIdx], [chapters, chapterIdx])
   const sections = useMemo(() => current ? getSections(current.unit_id, flatUnits) : [], [current, flatUnits])
@@ -436,7 +488,7 @@ function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1 }: {
   const topMargin = depth === 1 ? '40px' : '28px'
 
   return (
-    <div id={`sec-${uid}`} style={{marginTop:topMargin, scrollMarginTop:'56px'}}>
+    <div id={`sec-${uid}`} data-sec-id={uid} style={{marginTop:topMargin, scrollMarginTop:'56px'}}>
       {(secNum || title) && (
         <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'12px',paddingBottom:'8px',borderBottom:borderStyle}}>
           {secNum && (
@@ -592,7 +644,7 @@ function TOCSectionItem({ sec, flatUnits, idx, isChapterActive, activeSectionId,
   const isActiveSection = activeSectionId === sec.unit_id
   return (
     <>
-      <button onClick={()=>onNavigate(idx, sec.unit_id)} style={{
+      <button id={`toc-${sec.unit_id}`} onClick={()=>onNavigate(idx, sec.unit_id)} style={{
         width:'100%', textAlign:'left',
         display:'flex', alignItems:'baseline', gap:'5px',
         padding:`3px 16px 3px ${leftPad}px`,
