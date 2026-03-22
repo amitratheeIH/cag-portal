@@ -186,15 +186,28 @@ function fnSupHtml(fn: FnRef): string {
 // ── Inject a superscript at char offset (anchor_char_end) into raw HTML text ──
 // Offsets are into stripped text; we must walk raw HTML to find insertion point.
 function injectSupAtOffset(rawHtml: string, charEnd: number, fnRef: FnRef): string {
-  // Walk raw HTML counting only non-tag characters
-  const stripped = stripTags(rawHtml)
-  const target = Math.min(charEnd, stripped.length)
-  
+  // Walk raw HTML counting only non-tag characters.
+  // HTML entities (&amp; &lt; &gt;) count as ONE character each,
+  // matching how the builder computed anchor offsets from plain text.
+  const target = Math.min(charEnd, stripTags(rawHtml).length)
+
   let sc = 0
   let inTag = false
   for (let i = 0; i < rawHtml.length; i++) {
     if (rawHtml[i] === '<') { inTag = true }
     if (!inTag) {
+      // Consume HTML entity as one logical character
+      if (rawHtml[i] === '&') {
+        const semi = rawHtml.indexOf(';', i)
+        if (semi > i && semi - i <= 8) {
+          sc++
+          if (sc === target) {
+            return rawHtml.slice(0, semi + 1) + fnSupHtml(fnRef) + rawHtml.slice(semi + 1)
+          }
+          i = semi  // skip to end of entity
+          continue
+        }
+      }
       sc++
       if (sc === target) {
         return rawHtml.slice(0, i + 1) + fnSupHtml(fnRef) + rawHtml.slice(i + 1)
@@ -202,7 +215,6 @@ function injectSupAtOffset(rawHtml: string, charEnd: number, fnRef: FnRef): stri
     }
     if (rawHtml[i] === '>') { inTag = false }
   }
-  // Fallback: append at end
   return rawHtml + fnSupHtml(fnRef)
 }
 
