@@ -193,6 +193,13 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('keydown', h)
   }, [chapterIdx, goTo])
 
+  // Hooks must all come before any conditional return
+  const current = useMemo(() => chapters[chapterIdx], [chapters, chapterIdx])
+  const sections = useMemo(() => current ? getSections(current.unit_id, flatUnits) : [], [current, flatUnits])
+  const reportTitle = useMemo(() => ml(initialData.metadata?.common?.title) || productId, [initialData.metadata, productId])
+  const hasPrev = chapterIdx > 0
+  const hasNext = chapterIdx < chapters.length - 1
+
   // ── Scroll-spy: update activeSectionId as user scrolls ───────
   useEffect(() => {
     if (!contentRef.current || sections.length === 0) {
@@ -200,10 +207,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       return
     }
     const root = contentRef.current
-
-    // Track which sections are visible — pick the topmost one
     const visible = new Map<string, number>()
-
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach(entry => {
@@ -216,25 +220,15 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           }
         })
         if (visible.size === 0) return
-        // Pick the section whose top is closest to (but below) the nav bar
         const topmost = Array.from(visible.entries()).sort((a, b) => a[1] - b[1])[0]
         if (topmost) setActiveSectionId(topmost[0])
       },
-      {
-        root,
-        // Top margin: -64px for nav bar, bottom: small negative to trigger early
-        rootMargin: '-56px 0px -60% 0px',
-        threshold: 0,
-      }
+      { root, rootMargin: '-56px 0px -60% 0px', threshold: 0 }
     )
-
-    // Observe all section elements in current chapter
-    const sectionUids = sections.map(s => s.unit_id)
-    sectionUids.forEach(uid => {
-      const el = root.querySelector(`[data-sec-id="${uid}"]`)
+    sections.forEach(sec => {
+      const el = root.querySelector(`[data-sec-id="${sec.unit_id}"]`)
       if (el) observer.observe(el)
     })
-
     return () => observer.disconnect()
   }, [sections, chapterIdx])
 
@@ -244,13 +238,6 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     const el = document.getElementById(`toc-${activeSectionId}`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [activeSectionId])
-
-  // Hooks must all come before any conditional return
-  const current = useMemo(() => chapters[chapterIdx], [chapters, chapterIdx])
-  const sections = useMemo(() => current ? getSections(current.unit_id, flatUnits) : [], [current, flatUnits])
-  const reportTitle = useMemo(() => ml(initialData.metadata?.common?.title) || productId, [initialData.metadata, productId])
-  const hasPrev = chapterIdx > 0
-  const hasNext = chapterIdx < chapters.length - 1
 
   // fn/annotation indexes are updated via useEffect (below)
 
