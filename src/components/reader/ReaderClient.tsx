@@ -109,6 +109,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
   const toggleReaderMode = () => {
     const next = !readerMode
+    readerModeRef.current = next
     setReaderMode(next)
     if (next) {
       // Enter reader mode: close TOC, hide site header
@@ -141,6 +142,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   // back to the section that briefly enters the viewport above the target.
   const scrollSpyLockedRef = useRef(false)
   const scrollSpyLockTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  // Ref mirror of readerMode for use inside stable callbacks (avoids dep-array churn)
+  const readerModeRef = useRef(false)
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
 
@@ -171,69 +174,65 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     }, ms)
   }, [])
 
-  // Scroll a section heading to ~25% down the reading pane.
+  // Scroll a section heading to a comfortable reading position (~25% from top of viewport).
   //
-  // Two problems this solves:
+  // Architecture: window is the single scroll container. The page scrolls naturally.
+  // TOC and nav bar are position:sticky, so they stay visible without a nested scroller.
   //
-  // A) Scroll-spy overwrites TOC highlight during nudge animation:
-  //    scrollIntoView({instant}) snaps target to top → scrollBy(-25%, smooth) animates
-  //    upward → section ABOVE the target enters viewport → IntersectionObserver picks
-  //    it as "topmost" → TOC flips to wrong section (e.g. click 3.3, TOC shows 3.2).
-  //    Fix: lock the spy for the duration of the animation + content load window.
+  // Two problems handled:
   //
-  // B) Async content (images via useEffect, datasets via fetch) loads after the scroll
-  //    fires, adding height above the target and pushing it far below the landing point.
-  //    Fix: ResizeObserver watches the container and re-anchors each time content grows.
-  //    The spy lock is extended on every re-anchor so it never fires during corrections.
+  // A) Scroll-spy flipping TOC during nudge: scrollIntoView(instant) snaps to viewport
+  //    top, then scrollBy(-nudge, smooth) animates upward — during animation the section
+  //    ABOVE enters the viewport, spy fires, wrong section highlights.
+  //    Fix: lock the spy before every scroll operation.
+  //
+  // B) Async content (images via useEffect, datasets via fetch) loading after scroll
+  //    fires — adds height above target, pushing it below landing position.
+  //    Fix: ResizeObserver on document.body re-anchors each time layout shifts.
   const scrollToSection = useCallback((sectionId: string) => {
     const el = document.getElementById(`sec-${sectionId}`)
-    const container = contentRef.current
-    if (!el || !container) return
+    if (!el) return
 
-    const NUDGE_MS = 600   // ~duration of the smooth scrollBy animation
-    const LOCK_MS  = 2500  // initial spy lock — enough for most images/datasets to load
+    const LOCK_MS = 2500  // spy lock covers animation + typical image/dataset load time
+
+    // Combined height of site header + sticky reader nav bar.
+    // scrollIntoView(block:start) aligns element to viewport top (0px).
+    // We nudge back by Math.max(25% height, BARS+40px) so heading always clears
+    // the sticky bars AND sits in a comfortable reading position.
+    const BARS  = readerModeRef.current ? 44 : 108   // 64px header + 44px nav, or just nav in reader mode
+    const nudge = Math.max(window.innerHeight * 0.25, BARS + 40)
 
     const doScroll = () => {
-      // Lock spy BEFORE scrollIntoView so the instant snap doesn't trigger it either
       lockScrollSpy(LOCK_MS)
-      // Snap to element top — browser-native, always accurate for current layout
+      // Instant snap to viewport top — browser handles layout correctly at this point
       el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
-      // Smooth nudge back so heading sits ~25% down the visible pane
-      container.scrollBy({ top: -(container.clientHeight * 0.25), behavior: 'smooth' })
+      // Smooth nudge back so heading sits in reading zone
+      window.scrollBy({ top: -nudge, behavior: 'smooth' })
     }
 
     doScroll()
 
-    // ResizeObserver: re-anchor whenever async content above the target grows the page.
+    // Watch document.body for height changes (images/datasets loading above target).
+    // Re-anchor only if element drifted DOWN from intended position and user hasn't
+    // manually scrolled away.
     let debounce: ReturnType<typeof setTimeout>
     const ro = new ResizeObserver(() => {
       clearTimeout(debounce)
       debounce = setTimeout(() => {
-        const elTop  = el.getBoundingClientRect().top
-        const cTop   = container.getBoundingClientRect().top
-        const relTop = elTop - cTop
-        const quarter = container.clientHeight * 0.25
-        // Re-anchor only if element has drifted DOWN past its intended 25% position
-        // AND is still within the visible pane (user has not scrolled away).
-        // If user scrolled down: relTop < 0 (element above viewport) → skip.
-        // If user scrolled up far: relTop > 90% of height → skip.
-        if (relTop > quarter + 60 && relTop < container.clientHeight * 0.9) {
-          doScroll()  // extends the spy lock too (lockScrollSpy called inside doScroll)
+        const elTop = el.getBoundingClientRect().top
+        // Element drifted below nudge position AND is still near the viewport
+        // (not scrolled away — if user scrolled down elTop < BARS; if scrolled up, > 90%)
+        if (elTop > nudge + 60 && elTop < window.innerHeight * 0.9) {
+          doScroll()
         }
       }, 100)
     })
 
-    ro.observe(container)
-    // Stop watching 500ms after the nudge finishes — content should be stable by then
+    ro.observe(document.body)
     const kill = setTimeout(() => { ro.disconnect(); clearTimeout(debounce) }, 5000)
-    // Clean up immediately if user navigates away (element leaves DOM)
     const mo = new MutationObserver(() => {
       if (!document.contains(el)) {
-        ro.disconnect()
-        clearTimeout(debounce)
-        clearTimeout(kill)
-        mo.disconnect()
-        // Release spy lock so normal scrolling works in the new chapter
+        ro.disconnect(); clearTimeout(debounce); clearTimeout(kill); mo.disconnect()
         clearTimeout(scrollSpyLockTimerRef.current)
         scrollSpyLockedRef.current = false
       }
@@ -254,12 +253,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       setActiveSectionId(null)
     }
     if (chapterChanged) {
-      contentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
       pendingSectionRef.current = sectionId || null
     } else if (sectionId) {
       scrollToSection(sectionId)  // scrollToSection also locks spy internally
     } else {
-      contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
@@ -366,18 +365,20 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const hasNext = chapterIdx < chapters.length - 1
 
   // ── Scroll-spy: update activeSectionId as user scrolls ───────
+  // root:null means IntersectionObserver uses the viewport (window scroll).
+  // rootMargin top = site header (64px) + sticky nav bar (44px) = 108px.
+  // In reader mode the site header is hidden so only nav bar height (44px).
   useEffect(() => {
-    if (!contentRef.current || sections.length === 0) {
+    if (sections.length === 0) {
       setActiveSectionId(null)
       return
     }
-    const root = contentRef.current
+    const topExclusion = readerMode ? '-44px' : '-108px'
     const visible = new Map<string, number>()
     const observer = new IntersectionObserver(
       (entries) => {
-        // Do not overwrite activeSectionId while a TOC-initiated scroll is in progress.
-        // The nudge animation briefly exposes sections above the target, which would
-        // cause the wrong section to highlight (e.g. click 3.3 → TOC shows 3.2).
+        // Locked during TOC-initiated scroll — prevents nudge animation from
+        // briefly exposing the section above the target and flipping the TOC.
         if (scrollSpyLockedRef.current) return
         entries.forEach(entry => {
           const uid = entry.target.getAttribute('data-sec-id')
@@ -392,14 +393,14 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         const topmost = Array.from(visible.entries()).sort((a, b) => a[1] - b[1])[0]
         if (topmost) setActiveSectionId(topmost[0])
       },
-      { root, rootMargin: '-56px 0px -60% 0px', threshold: 0 }
+      { root: null, rootMargin: `${topExclusion} 0px -60% 0px`, threshold: 0 }
     )
     sections.forEach(sec => {
-      const el = root.querySelector(`[data-sec-id="${sec.unit_id}"]`)
+      const el = document.querySelector(`[data-sec-id="${sec.unit_id}"]`)
       if (el) observer.observe(el)
     })
     return () => observer.disconnect()
-  }, [sections, chapterIdx])
+  }, [sections, chapterIdx, readerMode])
 
   // Auto-scroll TOC to keep active section visible
   useEffect(() => {
@@ -417,7 +418,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   )
 
   return (
-    <div style={{display:'flex', height: readerMode ? '100vh' : 'calc(100vh - 64px)', minHeight:'-webkit-fill-available', overflow:'hidden', transition:'height .25s ease'}} className="reader-root">
+    <div style={{display:'flex', minHeight:'calc(100vh - 64px)'}} className="reader-root">
 
       {/* ── TOC ─────────────────────────────────── */}
       {/* Overlay backdrop on mobile when TOC is open */}
@@ -433,18 +434,24 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         className={tocOpen ? 'toc-open' : 'toc-closed'}
         style={{
           flexShrink: 0,
-          overflow: 'hidden',
           borderRight: '1px solid #d4d0ca',
           background: '#f9f8f6',
           display: 'flex',
           flexDirection: 'column',
+          // Sticky: the TOC column stays in view as the page scrolls.
+          // top accounts for the site header (64px) or 0 in reader-fullscreen mode.
+          position: 'sticky',
+          top: readerMode ? 0 : 64,
+          height: readerMode ? '100vh' : 'calc(100vh - 64px)',
+          alignSelf: 'flex-start',
+          overflowY: 'auto',
         }}>
-        <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0}}>
+        <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0,position:'sticky',top:0,background:'#f9f8f6',zIndex:1}}>
           <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#999'}}>
             Contents
           </span>
         </div>
-        <div style={{flex:1,overflowY:'auto',padding:'4px 0 24px'}}>
+        <div style={{flex:1,padding:'4px 0 24px'}}>
           {flatUnits.length > 0 && (
             <TOCPanel flatUnits={flatUnits} chapters={chapters} currentIdx={chapterIdx} activeSectionId={activeSectionId} onNavigate={goTo}/>
           )}
@@ -452,14 +459,14 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       </aside>
 
       {/* ── Main ────────────────────────────────── */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0}}>
 
-        {/* ── Nav bar ──────────────────────────────────────────── */}
+        {/* ── Nav bar — sticky so it stays visible as page scrolls ── */}
         <div style={{
           height:'44px', flexShrink:0, display:'flex', alignItems:'center',
           justifyContent:'space-between', padding:'0 10px',
           borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
-          zIndex:10, position:'relative', gap:'6px',
+          zIndex:20, position:'sticky', top: readerMode ? 0 : 64, gap:'6px',
         }}>
 
           {/* Left: TOC toggle + chapter title */}
@@ -528,8 +535,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           </div>
         </div>
 
-        {/* Content — flex:1 + overflow:auto = exactly fills remaining space */}
-        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0}}>
+        {/* Content — natural flow; window is the single scroll container */}
+        <div ref={contentRef} style={{flex:'1 1 0',background:'#edeae4'}}>
           {current && (
             <ChapterPage
               key={current.unit_id}
