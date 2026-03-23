@@ -133,10 +133,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
-  const contentRef = useRef<HTMLDivElement>(null)
-  const pendingSectionRef    = useRef<string | null>(null)
-  const scrollSpyLockedRef   = useRef(false)
-  const spyLockTimerRef      = useRef<ReturnType<typeof setTimeout>>()
+  const contentRef        = useRef<HTMLDivElement>(null)
+  const pendingSectionRef  = useRef<string | null>(null)
+  const spyLockedRef       = useRef(false)
+  const spyTimerRef        = useRef<ReturnType<typeof setTimeout>>()
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
 
@@ -157,27 +157,22 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setChapterIdx(0)
   }, [initialData.structure, unitIdFromUrl])
 
-  // ── Lock scroll-spy ────────────────────────────────────────────
-  // Prevents the IntersectionObserver from overwriting activeSectionId
-  // while we are mid-scroll or while async content is still loading.
+  // Lock scroll-spy so the IntersectionObserver cannot overwrite activeSectionId
+  // during our scroll animation or while async content is loading above the target.
   const lockSpy = useCallback((ms: number) => {
-    scrollSpyLockedRef.current = true
-    clearTimeout(spyLockTimerRef.current)
-    spyLockTimerRef.current = setTimeout(() => { scrollSpyLockedRef.current = false }, ms)
+    spyLockedRef.current = true
+    clearTimeout(spyTimerRef.current)
+    spyTimerRef.current = setTimeout(() => { spyLockedRef.current = false }, ms)
   }, [])
 
-  // ── Scroll section to ~25% down the content pane ────────────────
-  // Step 1: scrollIntoView(instant) — lets the browser position the element
-  //         correctly regardless of image/table load state.
-  // Step 2: scrollBy(-25% of pane height, smooth) — nudges heading into a
-  //         comfortable reading position.
-  // ResizeObserver re-anchors if async content (images/datasets) loads above
-  // the target and pushes it down before the user has scrolled away.
+  // Scroll a section to ~25% down the content pane.
+  // Uses scrollIntoView(instant) so the browser positions correctly regardless of
+  // whether images/tables above have loaded, then smooth-nudges back 25%.
+  // ResizeObserver re-anchors if async content shifts the element down afterwards.
   const scrollToSection = useCallback((sectionId: string) => {
     const el = document.getElementById('sec-' + sectionId)
     const c  = contentRef.current
     if (!el || !c) return
-
     const nudge = c.clientHeight * 0.25
 
     const doScroll = () => {
@@ -185,26 +180,24 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
       c.scrollBy({ top: -nudge, behavior: 'smooth' })
     }
-
     doScroll()
 
-    // Watch for layout growth (images / dataset tables loading above the target)
+    // Re-anchor each time content above the target grows (images, dataset tables)
     let t: ReturnType<typeof setTimeout>
     const ro = new ResizeObserver(() => {
       clearTimeout(t)
       t = setTimeout(() => {
         const rel = el.getBoundingClientRect().top - c.getBoundingClientRect().top
-        // Re-anchor only if element drifted down AND user hasn't scrolled away
         if (rel > nudge + 60 && rel < c.clientHeight * 0.9) doScroll()
       }, 100)
     })
     ro.observe(c)
     const kill = setTimeout(() => { ro.disconnect(); clearTimeout(t) }, 5000)
-    // Clean up immediately if chapter changes (element leaves DOM)
+    // Release on chapter change
     const mo = new MutationObserver(() => {
       if (!document.contains(el)) {
         ro.disconnect(); clearTimeout(t); clearTimeout(kill); mo.disconnect()
-        clearTimeout(spyLockTimerRef.current); scrollSpyLockedRef.current = false
+        clearTimeout(spyTimerRef.current); spyLockedRef.current = false
       }
     })
     mo.observe(document.body, { childList: true, subtree: false })
@@ -214,13 +207,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (idx < 0 || idx >= chapters.length) return
     const chapterChanged = idx !== chapterIdx
     setChapterIdx(idx)
-    // Set highlight immediately — spy is locked so it can't overwrite during scroll
     if (sectionId) { setActiveSectionId(sectionId); lockSpy(2500) }
-    else            { setActiveSectionId(null) }
+    else setActiveSectionId(null)
     if (chapterChanged) {
-      // Instant reset to top — no animation conflict with upcoming section scroll
       contentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
-      // Store section; useEffect[blockVersion] scrolls after final render
       pendingSectionRef.current = sectionId || null
     } else if (sectionId) {
       scrollToSection(sectionId)
@@ -232,10 +222,9 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (window.innerWidth < 768) setTocOpen(false)
   }, [chapters, chapterIdx, productId, scrollToSection, lockSpy])
 
-  // After blockVersion increments (fn/ref indexes updated → final render committed),
-  // scroll to any section that was deferred from a cross-chapter TOC click.
-  // blockVersion, not chapterIdx, because ChapterPage key is now unit_id only —
-  // blockVersion is the last state change after a chapter switch.
+  // Fire after blockVersion increments (the LAST state change after a chapter switch —
+  // fn/ref indexes built → setBlockVersion → blocks re-render in-place).
+  // Scroll any pending section now that the DOM is final and stable.
   useEffect(() => {
     const pending = pendingSectionRef.current
     if (!pending) return
@@ -336,9 +325,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     const visible = new Map<string, number>()
     const observer = new IntersectionObserver(
       (entries) => {
-        // Locked while a TOC scroll is in progress — nudge animation briefly
-        // exposes the section above the target, which would flip the highlight.
-        if (scrollSpyLockedRef.current) return
+        if (spyLockedRef.current) return  // locked during TOC-scroll — prevents flip
         entries.forEach(entry => {
           const uid = entry.target.getAttribute('data-sec-id')
           if (!uid) return
@@ -488,29 +475,46 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           </div>
         </div>
 
-        {/* Content — flex:1 + overflow:auto = exactly fills remaining space */}
+        {/* Content — the single scroll pane */}
         <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain'}}>
           {current && (
             <ChapterPage
               key={current.unit_id}
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
-              prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
               onNavigate={goTo} chapterIdx={chapterIdx} readerMode={readerMode}
               blockVersion={blockVersion}
             />
           )}
         </div>
+
+        {/* ── Prev / Next bar — outside scroll pane, always visible ── */}
+        {(hasPrev || hasNext) && (
+          <div style={{
+            flexShrink:0, display:'flex', gap:'8px',
+            padding:'8px 12px',
+            borderTop:'1px solid #d4d0ca', background:'#f9f8f6',
+            zIndex:10,
+          }}>
+            {hasPrev
+              ? <NavBtn unit={chapters[chapterIdx-1]} dir="prev" onClick={()=>goTo(chapterIdx-1)}/>
+              : <div style={{flex:1}}/>
+            }
+            {hasNext
+              ? <NavBtn unit={chapters[chapterIdx+1]} dir="next" onClick={()=>goTo(chapterIdx+1)}/>
+              : <div style={{flex:1}}/>
+            }
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion }: {
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, onNavigate, chapterIdx, readerMode, blockVersion }: {
   unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
-  prev?: FlatUnit; next?: FlatUnit
   onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean; blockVersion?: number
 }) {
   const uid    = unit.unit_id
@@ -597,12 +601,6 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
           ))}
 
           {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
-
-          {/* Bottom nav — inside paper, natural flow, never overflows */}
-          <div style={{marginTop:'48px',paddingTop:'20px',borderTop:'1px solid #e4e0d8',display:'flex',flexDirection:'column',gap:'10px'}} className="sm:flex-row sm:justify-between">
-            {prev ? <NavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/> : <div className="hidden sm:block"/>}
-            {next ? <NavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/> : <div className="hidden sm:block"/>}
-          </div>
 
         </div>
       </div>
