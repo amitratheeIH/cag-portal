@@ -136,6 +136,11 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const contentRef = useRef<HTMLDivElement>(null)
   // Holds a section id that needs scrolling after a chapter-change render completes
   const pendingSectionRef = useRef<string | null>(null)
+  // While true the scroll-spy IntersectionObserver will not overwrite activeSectionId.
+  // Locked during TOC-initiated scrolls so the nudge animation cannot flip the TOC
+  // back to the section that briefly enters the viewport above the target.
+  const scrollSpyLockedRef = useRef(false)
+  const scrollSpyLockTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
 
@@ -156,21 +161,42 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setChapterIdx(0)
   }, [initialData.structure, unitIdFromUrl])
 
+  // Lock the scroll-spy for `ms` milliseconds so the IntersectionObserver cannot
+  // overwrite activeSectionId while we are mid-scroll or while async content is loading.
+  const lockScrollSpy = useCallback((ms: number) => {
+    scrollSpyLockedRef.current = true
+    clearTimeout(scrollSpyLockTimerRef.current)
+    scrollSpyLockTimerRef.current = setTimeout(() => {
+      scrollSpyLockedRef.current = false
+    }, ms)
+  }, [])
+
   // Scroll a section heading to ~25% down the reading pane.
   //
-  // Problem: images (placeholder→<img> via useEffect) and dataset tables (fetch→setDs)
-  // load AFTER our scroll fires, adding height above the target and pushing it down.
-  // Solution: snap to element now (correct for current layout), then watch the container
-  // with ResizeObserver and re-anchor whenever content above the section grows,
-  // until everything is stable (5s timeout). Guard against re-scrolling if the user
-  // has already scrolled away.
+  // Two problems this solves:
+  //
+  // A) Scroll-spy overwrites TOC highlight during nudge animation:
+  //    scrollIntoView({instant}) snaps target to top → scrollBy(-25%, smooth) animates
+  //    upward → section ABOVE the target enters viewport → IntersectionObserver picks
+  //    it as "topmost" → TOC flips to wrong section (e.g. click 3.3, TOC shows 3.2).
+  //    Fix: lock the spy for the duration of the animation + content load window.
+  //
+  // B) Async content (images via useEffect, datasets via fetch) loads after the scroll
+  //    fires, adding height above the target and pushing it far below the landing point.
+  //    Fix: ResizeObserver watches the container and re-anchors each time content grows.
+  //    The spy lock is extended on every re-anchor so it never fires during corrections.
   const scrollToSection = useCallback((sectionId: string) => {
     const el = document.getElementById(`sec-${sectionId}`)
     const container = contentRef.current
     if (!el || !container) return
 
+    const NUDGE_MS = 600   // ~duration of the smooth scrollBy animation
+    const LOCK_MS  = 2500  // initial spy lock — enough for most images/datasets to load
+
     const doScroll = () => {
-      // Snap to element top (browser-native, always accurate for current layout)
+      // Lock spy BEFORE scrollIntoView so the instant snap doesn't trigger it either
+      lockScrollSpy(LOCK_MS)
+      // Snap to element top — browser-native, always accurate for current layout
       el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
       // Smooth nudge back so heading sits ~25% down the visible pane
       container.scrollBy({ top: -(container.clientHeight * 0.25), behavior: 'smooth' })
@@ -178,56 +204,67 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
     doScroll()
 
-    // Watch for layout shifts caused by async content (images, dataset tables) loading
-    // above the target section and pushing it down. Re-anchor each time.
+    // ResizeObserver: re-anchor whenever async content above the target grows the page.
     let debounce: ReturnType<typeof setTimeout>
     const ro = new ResizeObserver(() => {
       clearTimeout(debounce)
       debounce = setTimeout(() => {
         const elTop  = el.getBoundingClientRect().top
         const cTop   = container.getBoundingClientRect().top
-        const relTop = elTop - cTop   // positive = element is below container top edge
+        const relTop = elTop - cTop
         const quarter = container.clientHeight * 0.25
-        // Only re-anchor if element has drifted down from our intended position
-        // (content loaded above it), but is still within the visible pane — meaning
-        // the user has NOT scrolled away. If user scrolled down, relTop goes negative;
-        // if user scrolled up, relTop exceeds the container height.
-        if (relTop > quarter + 50 && relTop < container.clientHeight * 0.9) {
-          doScroll()
+        // Re-anchor only if element has drifted DOWN past its intended 25% position
+        // AND is still within the visible pane (user has not scrolled away).
+        // If user scrolled down: relTop < 0 (element above viewport) → skip.
+        // If user scrolled up far: relTop > 90% of height → skip.
+        if (relTop > quarter + 60 && relTop < container.clientHeight * 0.9) {
+          doScroll()  // extends the spy lock too (lockScrollSpy called inside doScroll)
         }
-      }, 80)
+      }, 100)
     })
 
     ro.observe(container)
-    // Stop watching after 5s — all realistic content will have loaded by then
+    // Stop watching 500ms after the nudge finishes — content should be stable by then
     const kill = setTimeout(() => { ro.disconnect(); clearTimeout(debounce) }, 5000)
-    // If the element leaves the DOM (chapter navigation), clean up immediately
+    // Clean up immediately if user navigates away (element leaves DOM)
     const mo = new MutationObserver(() => {
-      if (!document.contains(el)) { ro.disconnect(); clearTimeout(debounce); clearTimeout(kill); mo.disconnect() }
+      if (!document.contains(el)) {
+        ro.disconnect()
+        clearTimeout(debounce)
+        clearTimeout(kill)
+        mo.disconnect()
+        // Release spy lock so normal scrolling works in the new chapter
+        clearTimeout(scrollSpyLockTimerRef.current)
+        scrollSpyLockedRef.current = false
+      }
     })
     mo.observe(document.body, { childList: true, subtree: false })
-  }, [])
+  }, [lockScrollSpy])
 
   const goTo = useCallback((idx: number, sectionId?: string) => {
     if (idx < 0 || idx >= chapters.length) return
     const chapterChanged = idx !== chapterIdx
+    // Set activeSectionId immediately so TOC highlights the correct item right away.
+    // The spy is then locked so it cannot overwrite this during scroll animations.
     setChapterIdx(idx)
-    setActiveSectionId(sectionId || null)
+    if (sectionId) {
+      setActiveSectionId(sectionId)
+      lockScrollSpy(2500)  // lock before any scroll so instant-snap doesn't trigger spy
+    } else {
+      setActiveSectionId(null)
+    }
     if (chapterChanged) {
-      // Reset scroll instantly so the new chapter starts at top with no animation conflict
       contentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
-      // Store the desired section; a useEffect keyed on chapterIdx will scroll after render
       pendingSectionRef.current = sectionId || null
     } else if (sectionId) {
-      // Same chapter — element already in DOM, measure and scroll now
-      scrollToSection(sectionId)
+      scrollToSection(sectionId)  // scrollToSection also locks spy internally
     } else {
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     }
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
     if (window.innerWidth < 768) setTocOpen(false)
-  }, [chapters, chapterIdx, productId, scrollToSection])
+  }, [chapters, chapterIdx, productId, scrollToSection, lockScrollSpy])
 
   // Fire AFTER blockVersion increments — that is the last thing that happens
   // after a chapter change (fn/ann/ref indexes built → setBlockVersion → ChapterPage
@@ -338,6 +375,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     const visible = new Map<string, number>()
     const observer = new IntersectionObserver(
       (entries) => {
+        // Do not overwrite activeSectionId while a TOC-initiated scroll is in progress.
+        // The nudge animation briefly exposes sections above the target, which would
+        // cause the wrong section to highlight (e.g. click 3.3 → TOC shows 3.2).
+        if (scrollSpyLockedRef.current) return
         entries.forEach(entry => {
           const uid = entry.target.getAttribute('data-sec-id')
           if (!uid) return
