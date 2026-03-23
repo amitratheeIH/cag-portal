@@ -156,16 +156,18 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setChapterIdx(0)
   }, [initialData.structure, unitIdFromUrl])
 
-  // Scroll a section heading to ~25% down the reading pane — comfortable reading position.
-  // Reads element position AFTER layout is stable so measurement is always correct.
+  // Scroll a section heading to ~25% down the reading pane.
+  // Two-step: (1) browser-native snap to top — always accurate regardless of image load state;
+  // (2) smooth nudge back UP by 25% of the visible height for a comfortable reading position.
   const scrollToSection = useCallback((sectionId: string) => {
     const el = document.getElementById(`sec-${sectionId}`)
     const container = contentRef.current
     if (!el || !container) return
-    const elTop     = el.getBoundingClientRect().top
-    const cTop      = container.getBoundingClientRect().top
-    const targetPos = container.scrollTop + (elTop - cTop) - container.clientHeight * 0.25
-    container.scrollTo({ top: Math.max(0, targetPos), behavior: 'smooth' })
+    // Step 1 — snap the element to the top of its scroll container (browser handles layout)
+    el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
+    // Step 2 — nudge back up so the heading sits ~25% down instead of flush at top
+    const nudge = container.clientHeight * 0.25
+    container.scrollBy({ top: -nudge, behavior: 'smooth' })
   }, [])
 
   const goTo = useCallback((idx: number, sectionId?: string) => {
@@ -451,11 +453,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0}}>
           {current && (
             <ChapterPage
-              key={current.unit_id + '-' + blockVersion}
+              key={current.unit_id}
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
               prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
               onNavigate={goTo} chapterIdx={chapterIdx} readerMode={readerMode}
+              blockVersion={blockVersion}
             />
           )}
         </div>
@@ -465,11 +468,11 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode }: {
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion }: {
   unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   prev?: FlatUnit; next?: FlatUnit
-  onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean
+  onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean; blockVersion?: number
 }) {
   const uid    = unit.unit_id
   const uFile  = unitFiles[uid] || unit
@@ -548,10 +551,10 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
             </p>
           )}
 
-          <UnitBlocks uid={uid} blocks={blocks}/>
+          <UnitBlocks uid={uid} blocks={blocks} blockVersion={blockVersion}/>
 
           {sections.map(sec=>(
-            <SectionBlock key={sec.unit_id} unit={sec} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={1}/>
+            <SectionBlock key={sec.unit_id} unit={sec} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={1} blockVersion={blockVersion}/>
           ))}
 
           {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
@@ -569,10 +572,10 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
 }
 
 // ── Section block ─────────────────────────────────────────────
-function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1 }: {
+function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1, blockVersion }: {
   unit: FlatUnit; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
-  depth?: number
+  depth?: number; blockVersion?: number
 }) {
   const uid    = unit.unit_id
   const uFile  = unitFiles[uid] || unit
@@ -614,18 +617,20 @@ function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1 }: {
           ))}
         </div>
       )}
-      <UnitBlocks uid={uid} blocks={blocks}/>
+      <UnitBlocks uid={uid} blocks={blocks} blockVersion={blockVersion}/>
       {/* Render children recursively */}
       {children.map(child=>(
-        <SectionBlock key={child.unit_id} unit={child} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={depth+1}/>
+        <SectionBlock key={child.unit_id} unit={child} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={depth+1} blockVersion={blockVersion}/>
       ))}
     </div>
   )
 }
 
-function UnitBlocks({ uid, blocks }: { uid:string; blocks:Record<string,ContentBlock[]> }) {
+function UnitBlocks({ uid, blocks, blockVersion }: { uid:string; blocks:Record<string,ContentBlock[]>; blockVersion?: number }) {
   const sorted = (blocks[uid]||[]).slice().sort((a,b)=>(a.seq||0)-(b.seq||0))
-  return <>{sorted.map(b=><BlockRenderer key={b.block_id} block={b}/>)}</>
+  // Include blockVersion in key so blocks re-render (pick up new fn/ref module vars)
+  // without remounting the whole ChapterPage — avoids the double-flash on navigation.
+  return <>{sorted.map(b=><BlockRenderer key={b.block_id + '-' + (blockVersion||0)} block={b}/>)}</>
 }
 
 // ── Footnote list ─────────────────────────────────────────────
