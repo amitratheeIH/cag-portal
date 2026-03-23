@@ -109,7 +109,6 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
   const toggleReaderMode = () => {
     const next = !readerMode
-    readerModeRef.current = next
     setReaderMode(next)
     if (next) {
       // Enter reader mode: close TOC, hide site header
@@ -135,15 +134,9 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('resize', check)
   }, [])
   const contentRef = useRef<HTMLDivElement>(null)
-  // Holds a section id that needs scrolling after a chapter-change render completes
-  const pendingSectionRef = useRef<string | null>(null)
-  // While true the scroll-spy IntersectionObserver will not overwrite activeSectionId.
-  // Locked during TOC-initiated scrolls so the nudge animation cannot flip the TOC
-  // back to the section that briefly enters the viewport above the target.
-  const scrollSpyLockedRef = useRef(false)
-  const scrollSpyLockTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  // Ref mirror of readerMode for use inside stable callbacks (avoids dep-array churn)
-  const readerModeRef = useRef(false)
+  const pendingSectionRef    = useRef<string | null>(null)
+  const scrollSpyLockedRef   = useRef(false)
+  const spyLockTimerRef      = useRef<ReturnType<typeof setTimeout>>()
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
 
@@ -164,121 +157,90 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setChapterIdx(0)
   }, [initialData.structure, unitIdFromUrl])
 
-  // Lock the scroll-spy for `ms` milliseconds so the IntersectionObserver cannot
-  // overwrite activeSectionId while we are mid-scroll or while async content is loading.
-  const lockScrollSpy = useCallback((ms: number) => {
+  // ── Lock scroll-spy ────────────────────────────────────────────
+  // Prevents the IntersectionObserver from overwriting activeSectionId
+  // while we are mid-scroll or while async content is still loading.
+  const lockSpy = useCallback((ms: number) => {
     scrollSpyLockedRef.current = true
-    clearTimeout(scrollSpyLockTimerRef.current)
-    scrollSpyLockTimerRef.current = setTimeout(() => {
-      scrollSpyLockedRef.current = false
-    }, ms)
+    clearTimeout(spyLockTimerRef.current)
+    spyLockTimerRef.current = setTimeout(() => { scrollSpyLockedRef.current = false }, ms)
   }, [])
 
-  // Scroll a section heading to a comfortable reading position (~25% from top of viewport).
-  //
-  // Architecture: window is the single scroll container. The page scrolls naturally.
-  // TOC and nav bar are position:sticky, so they stay visible without a nested scroller.
-  //
-  // Two problems handled:
-  //
-  // A) Scroll-spy flipping TOC during nudge: scrollIntoView(instant) snaps to viewport
-  //    top, then scrollBy(-nudge, smooth) animates upward — during animation the section
-  //    ABOVE enters the viewport, spy fires, wrong section highlights.
-  //    Fix: lock the spy before every scroll operation.
-  //
-  // B) Async content (images via useEffect, datasets via fetch) loading after scroll
-  //    fires — adds height above target, pushing it below landing position.
-  //    Fix: ResizeObserver on document.body re-anchors each time layout shifts.
+  // ── Scroll section to ~25% down the content pane ────────────────
+  // Step 1: scrollIntoView(instant) — lets the browser position the element
+  //         correctly regardless of image/table load state.
+  // Step 2: scrollBy(-25% of pane height, smooth) — nudges heading into a
+  //         comfortable reading position.
+  // ResizeObserver re-anchors if async content (images/datasets) loads above
+  // the target and pushes it down before the user has scrolled away.
   const scrollToSection = useCallback((sectionId: string) => {
-    const el = document.getElementById(`sec-${sectionId}`)
-    if (!el) return
+    const el = document.getElementById('sec-' + sectionId)
+    const c  = contentRef.current
+    if (!el || !c) return
 
-    const LOCK_MS = 2500  // spy lock covers animation + typical image/dataset load time
-
-    // Combined height of site header + sticky reader nav bar.
-    // scrollIntoView(block:start) aligns element to viewport top (0px).
-    // We nudge back by Math.max(25% height, BARS+40px) so heading always clears
-    // the sticky bars AND sits in a comfortable reading position.
-    const BARS  = readerModeRef.current ? 44 : 108   // 64px header + 44px nav, or just nav in reader mode
-    const nudge = Math.max(window.innerHeight * 0.25, BARS + 40)
+    const nudge = c.clientHeight * 0.25
 
     const doScroll = () => {
-      lockScrollSpy(LOCK_MS)
-      // Instant snap to viewport top — browser handles layout correctly at this point
+      lockSpy(2500)
       el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
-      // Smooth nudge back so heading sits in reading zone
-      window.scrollBy({ top: -nudge, behavior: 'smooth' })
+      c.scrollBy({ top: -nudge, behavior: 'smooth' })
     }
 
     doScroll()
 
-    // Watch document.body for height changes (images/datasets loading above target).
-    // Re-anchor only if element drifted DOWN from intended position and user hasn't
-    // manually scrolled away.
-    let debounce: ReturnType<typeof setTimeout>
+    // Watch for layout growth (images / dataset tables loading above the target)
+    let t: ReturnType<typeof setTimeout>
     const ro = new ResizeObserver(() => {
-      clearTimeout(debounce)
-      debounce = setTimeout(() => {
-        const elTop = el.getBoundingClientRect().top
-        // Element drifted below nudge position AND is still near the viewport
-        // (not scrolled away — if user scrolled down elTop < BARS; if scrolled up, > 90%)
-        if (elTop > nudge + 60 && elTop < window.innerHeight * 0.9) {
-          doScroll()
-        }
+      clearTimeout(t)
+      t = setTimeout(() => {
+        const rel = el.getBoundingClientRect().top - c.getBoundingClientRect().top
+        // Re-anchor only if element drifted down AND user hasn't scrolled away
+        if (rel > nudge + 60 && rel < c.clientHeight * 0.9) doScroll()
       }, 100)
     })
-
-    ro.observe(document.body)
-    const kill = setTimeout(() => { ro.disconnect(); clearTimeout(debounce) }, 5000)
+    ro.observe(c)
+    const kill = setTimeout(() => { ro.disconnect(); clearTimeout(t) }, 5000)
+    // Clean up immediately if chapter changes (element leaves DOM)
     const mo = new MutationObserver(() => {
       if (!document.contains(el)) {
-        ro.disconnect(); clearTimeout(debounce); clearTimeout(kill); mo.disconnect()
-        clearTimeout(scrollSpyLockTimerRef.current)
-        scrollSpyLockedRef.current = false
+        ro.disconnect(); clearTimeout(t); clearTimeout(kill); mo.disconnect()
+        clearTimeout(spyLockTimerRef.current); scrollSpyLockedRef.current = false
       }
     })
     mo.observe(document.body, { childList: true, subtree: false })
-  }, [lockScrollSpy])
+  }, [lockSpy])
 
   const goTo = useCallback((idx: number, sectionId?: string) => {
     if (idx < 0 || idx >= chapters.length) return
     const chapterChanged = idx !== chapterIdx
-    // Set activeSectionId immediately so TOC highlights the correct item right away.
-    // The spy is then locked so it cannot overwrite this during scroll animations.
     setChapterIdx(idx)
-    if (sectionId) {
-      setActiveSectionId(sectionId)
-      lockScrollSpy(2500)  // lock before any scroll so instant-snap doesn't trigger spy
-    } else {
-      setActiveSectionId(null)
-    }
+    // Set highlight immediately — spy is locked so it can't overwrite during scroll
+    if (sectionId) { setActiveSectionId(sectionId); lockSpy(2500) }
+    else            { setActiveSectionId(null) }
     if (chapterChanged) {
-      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+      // Instant reset to top — no animation conflict with upcoming section scroll
+      contentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+      // Store section; useEffect[blockVersion] scrolls after final render
       pendingSectionRef.current = sectionId || null
     } else if (sectionId) {
-      scrollToSection(sectionId)  // scrollToSection also locks spy internally
+      scrollToSection(sectionId)
     } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     }
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
     if (window.innerWidth < 768) setTocOpen(false)
-  }, [chapters, chapterIdx, productId, scrollToSection, lockScrollSpy])
+  }, [chapters, chapterIdx, productId, scrollToSection, lockSpy])
 
-  // Fire AFTER blockVersion increments — that is the last thing that happens
-  // after a chapter change (fn/ann/ref indexes built → setBlockVersion → ChapterPage
-  // remounts with new key). Only at that point is the DOM final and stable.
-  // Using blockVersion (not chapterIdx) avoids scrolling on render #1 of two.
+  // After blockVersion increments (fn/ref indexes updated → final render committed),
+  // scroll to any section that was deferred from a cross-chapter TOC click.
+  // blockVersion, not chapterIdx, because ChapterPage key is now unit_id only —
+  // blockVersion is the last state change after a chapter switch.
   useEffect(() => {
     const pending = pendingSectionRef.current
     if (!pending) return
     pendingSectionRef.current = null
-    // Two rAFs: first = React paint flush, second = browser layout settled
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        scrollToSection(pending)
-      })
-    })
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollToSection(pending)))
   }, [blockVersion, scrollToSection])
 
   // Wire global nav callback so inline ref links can navigate chapters
@@ -365,20 +327,17 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   const hasNext = chapterIdx < chapters.length - 1
 
   // ── Scroll-spy: update activeSectionId as user scrolls ───────
-  // root:null means IntersectionObserver uses the viewport (window scroll).
-  // rootMargin top = site header (64px) + sticky nav bar (44px) = 108px.
-  // In reader mode the site header is hidden so only nav bar height (44px).
   useEffect(() => {
-    if (sections.length === 0) {
+    if (!contentRef.current || sections.length === 0) {
       setActiveSectionId(null)
       return
     }
-    const topExclusion = readerMode ? '-44px' : '-108px'
+    const root = contentRef.current
     const visible = new Map<string, number>()
     const observer = new IntersectionObserver(
       (entries) => {
-        // Locked during TOC-initiated scroll — prevents nudge animation from
-        // briefly exposing the section above the target and flipping the TOC.
+        // Locked while a TOC scroll is in progress — nudge animation briefly
+        // exposes the section above the target, which would flip the highlight.
         if (scrollSpyLockedRef.current) return
         entries.forEach(entry => {
           const uid = entry.target.getAttribute('data-sec-id')
@@ -393,14 +352,14 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         const topmost = Array.from(visible.entries()).sort((a, b) => a[1] - b[1])[0]
         if (topmost) setActiveSectionId(topmost[0])
       },
-      { root: null, rootMargin: `${topExclusion} 0px -60% 0px`, threshold: 0 }
+      { root, rootMargin: '-56px 0px -60% 0px', threshold: 0 }
     )
     sections.forEach(sec => {
-      const el = document.querySelector(`[data-sec-id="${sec.unit_id}"]`)
+      const el = root.querySelector(`[data-sec-id="${sec.unit_id}"]`)
       if (el) observer.observe(el)
     })
     return () => observer.disconnect()
-  }, [sections, chapterIdx, readerMode])
+  }, [sections, chapterIdx])
 
   // Auto-scroll TOC to keep active section visible
   useEffect(() => {
@@ -418,7 +377,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   )
 
   return (
-    <div style={{display:'flex', minHeight:'calc(100vh - 64px)'}} className="reader-root">
+    <div style={{display:'flex', height: readerMode ? '100vh' : 'calc(100vh - 64px)', minHeight:'-webkit-fill-available', overflow:'hidden', transition:'height .25s ease'}} className="reader-root">
 
       {/* ── TOC ─────────────────────────────────── */}
       {/* Overlay backdrop on mobile when TOC is open */}
@@ -434,24 +393,18 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         className={tocOpen ? 'toc-open' : 'toc-closed'}
         style={{
           flexShrink: 0,
+          overflow: 'hidden',
           borderRight: '1px solid #d4d0ca',
           background: '#f9f8f6',
           display: 'flex',
           flexDirection: 'column',
-          // Sticky: the TOC column stays in view as the page scrolls.
-          // top accounts for the site header (64px) or 0 in reader-fullscreen mode.
-          position: 'sticky',
-          top: readerMode ? 0 : 64,
-          height: readerMode ? '100vh' : 'calc(100vh - 64px)',
-          alignSelf: 'flex-start',
-          overflowY: 'auto',
         }}>
-        <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0,position:'sticky',top:0,background:'#f9f8f6',zIndex:1}}>
+        <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0}}>
           <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#999'}}>
             Contents
           </span>
         </div>
-        <div style={{flex:1,padding:'4px 0 24px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'4px 0 24px'}}>
           {flatUnits.length > 0 && (
             <TOCPanel flatUnits={flatUnits} chapters={chapters} currentIdx={chapterIdx} activeSectionId={activeSectionId} onNavigate={goTo}/>
           )}
@@ -459,14 +412,14 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       </aside>
 
       {/* ── Main ────────────────────────────────── */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0}}>
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
 
-        {/* ── Nav bar — sticky so it stays visible as page scrolls ── */}
+        {/* ── Nav bar ──────────────────────────────────────────── */}
         <div style={{
           height:'44px', flexShrink:0, display:'flex', alignItems:'center',
           justifyContent:'space-between', padding:'0 10px',
           borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
-          zIndex:20, position:'sticky', top: readerMode ? 0 : 64, gap:'6px',
+          zIndex:10, position:'relative', gap:'6px',
         }}>
 
           {/* Left: TOC toggle + chapter title */}
@@ -535,8 +488,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           </div>
         </div>
 
-        {/* Content — natural flow; window is the single scroll container */}
-        <div ref={contentRef} style={{flex:'1 1 0',background:'#edeae4'}}>
+        {/* Content — flex:1 + overflow:auto = exactly fills remaining space */}
+        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain'}}>
           {current && (
             <ChapterPage
               key={current.unit_id}
@@ -714,9 +667,7 @@ function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1, blockVers
 
 function UnitBlocks({ uid, blocks, blockVersion }: { uid:string; blocks:Record<string,ContentBlock[]>; blockVersion?: number }) {
   const sorted = (blocks[uid]||[]).slice().sort((a,b)=>(a.seq||0)-(b.seq||0))
-  // Include blockVersion in key so blocks re-render (pick up new fn/ref module vars)
-  // without remounting the whole ChapterPage — avoids the double-flash on navigation.
-  return <>{sorted.map(b=><BlockRenderer key={b.block_id + '-' + (blockVersion||0)} block={b}/>)}</>
+  return <>{sorted.map(b=><BlockRenderer key={b.block_id+'-'+(blockVersion||0)} block={b}/>)}</>
 }
 
 // ── Footnote list ─────────────────────────────────────────────
