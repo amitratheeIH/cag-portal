@@ -157,17 +157,55 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   }, [initialData.structure, unitIdFromUrl])
 
   // Scroll a section heading to ~25% down the reading pane.
-  // Two-step: (1) browser-native snap to top — always accurate regardless of image load state;
-  // (2) smooth nudge back UP by 25% of the visible height for a comfortable reading position.
+  //
+  // Problem: images (placeholder→<img> via useEffect) and dataset tables (fetch→setDs)
+  // load AFTER our scroll fires, adding height above the target and pushing it down.
+  // Solution: snap to element now (correct for current layout), then watch the container
+  // with ResizeObserver and re-anchor whenever content above the section grows,
+  // until everything is stable (5s timeout). Guard against re-scrolling if the user
+  // has already scrolled away.
   const scrollToSection = useCallback((sectionId: string) => {
     const el = document.getElementById(`sec-${sectionId}`)
     const container = contentRef.current
     if (!el || !container) return
-    // Step 1 — snap the element to the top of its scroll container (browser handles layout)
-    el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
-    // Step 2 — nudge back up so the heading sits ~25% down instead of flush at top
-    const nudge = container.clientHeight * 0.25
-    container.scrollBy({ top: -nudge, behavior: 'smooth' })
+
+    const doScroll = () => {
+      // Snap to element top (browser-native, always accurate for current layout)
+      el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
+      // Smooth nudge back so heading sits ~25% down the visible pane
+      container.scrollBy({ top: -(container.clientHeight * 0.25), behavior: 'smooth' })
+    }
+
+    doScroll()
+
+    // Watch for layout shifts caused by async content (images, dataset tables) loading
+    // above the target section and pushing it down. Re-anchor each time.
+    let debounce: ReturnType<typeof setTimeout>
+    const ro = new ResizeObserver(() => {
+      clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        const elTop  = el.getBoundingClientRect().top
+        const cTop   = container.getBoundingClientRect().top
+        const relTop = elTop - cTop   // positive = element is below container top edge
+        const quarter = container.clientHeight * 0.25
+        // Only re-anchor if element has drifted down from our intended position
+        // (content loaded above it), but is still within the visible pane — meaning
+        // the user has NOT scrolled away. If user scrolled down, relTop goes negative;
+        // if user scrolled up, relTop exceeds the container height.
+        if (relTop > quarter + 50 && relTop < container.clientHeight * 0.9) {
+          doScroll()
+        }
+      }, 80)
+    })
+
+    ro.observe(container)
+    // Stop watching after 5s — all realistic content will have loaded by then
+    const kill = setTimeout(() => { ro.disconnect(); clearTimeout(debounce) }, 5000)
+    // If the element leaves the DOM (chapter navigation), clean up immediately
+    const mo = new MutationObserver(() => {
+      if (!document.contains(el)) { ro.disconnect(); clearTimeout(debounce); clearTimeout(kill); mo.disconnect() }
+    })
+    mo.observe(document.body, { childList: true, subtree: false })
   }, [])
 
   const goTo = useCallback((idx: number, sectionId?: string) => {
