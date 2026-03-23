@@ -134,6 +134,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('resize', check)
   }, [])
   const contentRef = useRef<HTMLDivElement>(null)
+  // Holds a section id that needs scrolling after a chapter-change render completes
+  const pendingSectionRef = useRef<string | null>(null)
 
   const chapters = useMemo(() => flatUnits.filter(isTopLevel), [flatUnits])
 
@@ -154,22 +156,16 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setChapterIdx(0)
   }, [initialData.structure, unitIdFromUrl])
 
-  // Scroll a section heading to ~25% from the top of the reading area
-  // so it sits in a comfortable reading position rather than flush against the nav bar.
+  // Scroll a section heading to ~25% down the reading pane — comfortable reading position.
+  // Reads element position AFTER layout is stable so measurement is always correct.
   const scrollToSection = useCallback((sectionId: string) => {
     const el = document.getElementById(`sec-${sectionId}`)
     const container = contentRef.current
     if (!el || !container) return
-    const containerRect = container.getBoundingClientRect()
-    const elRect        = el.getBoundingClientRect()
-    // Distance from container top to element top in current scroll position
-    const elRelTop = elRect.top - containerRect.top
-    // Place heading ~25% down the visible container height
-    const targetOffset = container.clientHeight * 0.25
-    container.scrollTo({
-      top: container.scrollTop + elRelTop - targetOffset,
-      behavior: 'smooth',
-    })
+    const elTop     = el.getBoundingClientRect().top
+    const cTop      = container.getBoundingClientRect().top
+    const targetPos = container.scrollTop + (elTop - cTop) - container.clientHeight * 0.25
+    container.scrollTo({ top: Math.max(0, targetPos), behavior: 'smooth' })
   }, [])
 
   const goTo = useCallback((idx: number, sectionId?: string) => {
@@ -178,26 +174,34 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setChapterIdx(idx)
     setActiveSectionId(sectionId || null)
     if (chapterChanged) {
-      // Navigating to a new chapter — scroll to top smoothly
-      contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-      if (sectionId) {
-        // After chapter renders, scroll the section to ~25% from top
-        setTimeout(() => scrollToSection(sectionId), 350)
-      }
+      // Reset scroll instantly so the new chapter starts at top with no animation conflict
+      contentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+      // Store the desired section; a useEffect keyed on chapterIdx will scroll after render
+      pendingSectionRef.current = sectionId || null
     } else if (sectionId) {
-      // Same chapter — scroll section to ~25% from top
+      // Same chapter — element already in DOM, measure and scroll now
       scrollToSection(sectionId)
     } else {
-      // Same chapter, no section — scroll to top
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     }
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
-    // Close TOC on mobile after navigation (isMobile updated via resize listener)
-    if (window.innerWidth < 768) {
-      setTocOpen(false)
-    }
+    if (window.innerWidth < 768) setTocOpen(false)
   }, [chapters, chapterIdx, productId, scrollToSection])
+
+  // After a chapter change React commits the new DOM — wait two animation frames
+  // so layout is fully stable, then scroll to any pending section.
+  useEffect(() => {
+    const pending = pendingSectionRef.current
+    if (!pending) return
+    pendingSectionRef.current = null
+    // rAF x2: first frame = React paint, second frame = layout fully settled
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToSection(pending)
+      })
+    })
+  }, [chapterIdx, scrollToSection])
 
   // Wire global nav callback so inline ref links can navigate chapters
   useEffect(() => {
