@@ -154,6 +154,24 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     setChapterIdx(0)
   }, [initialData.structure, unitIdFromUrl])
 
+  // Scroll a section heading to ~25% from the top of the reading area
+  // so it sits in a comfortable reading position rather than flush against the nav bar.
+  const scrollToSection = useCallback((sectionId: string) => {
+    const el = document.getElementById(`sec-${sectionId}`)
+    const container = contentRef.current
+    if (!el || !container) return
+    const containerRect = container.getBoundingClientRect()
+    const elRect        = el.getBoundingClientRect()
+    // Distance from container top to element top in current scroll position
+    const elRelTop = elRect.top - containerRect.top
+    // Place heading ~25% down the visible container height
+    const targetOffset = container.clientHeight * 0.25
+    container.scrollTo({
+      top: container.scrollTop + elRelTop - targetOffset,
+      behavior: 'smooth',
+    })
+  }, [])
+
   const goTo = useCallback((idx: number, sectionId?: string) => {
     if (idx < 0 || idx >= chapters.length) return
     const chapterChanged = idx !== chapterIdx
@@ -163,16 +181,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       // Navigating to a new chapter — scroll to top smoothly
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
       if (sectionId) {
-        // After chapter renders, scroll to the section
-        setTimeout(() => {
-          const el = document.getElementById(`sec-${sectionId}`)
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }, 350)
+        // After chapter renders, scroll the section to ~25% from top
+        setTimeout(() => scrollToSection(sectionId), 350)
       }
     } else if (sectionId) {
-      // Same chapter — just scroll to section
-      const el = document.getElementById(`sec-${sectionId}`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // Same chapter — scroll section to ~25% from top
+      scrollToSection(sectionId)
     } else {
       // Same chapter, no section — scroll to top
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -183,7 +197,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (window.innerWidth < 768) {
       setTocOpen(false)
     }
-  }, [chapters, chapterIdx, productId])
+  }, [chapters, chapterIdx, productId, scrollToSection])
 
   // Wire global nav callback so inline ref links can navigate chapters
   useEffect(() => {
