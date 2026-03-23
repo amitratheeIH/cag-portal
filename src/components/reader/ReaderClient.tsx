@@ -189,19 +189,21 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (window.innerWidth < 768) setTocOpen(false)
   }, [chapters, chapterIdx, productId, scrollToSection])
 
-  // After a chapter change React commits the new DOM — wait two animation frames
-  // so layout is fully stable, then scroll to any pending section.
+  // Fire AFTER blockVersion increments — that is the last thing that happens
+  // after a chapter change (fn/ann/ref indexes built → setBlockVersion → ChapterPage
+  // remounts with new key). Only at that point is the DOM final and stable.
+  // Using blockVersion (not chapterIdx) avoids scrolling on render #1 of two.
   useEffect(() => {
     const pending = pendingSectionRef.current
     if (!pending) return
     pendingSectionRef.current = null
-    // rAF x2: first frame = React paint, second frame = layout fully settled
+    // Two rAFs: first = React paint flush, second = browser layout settled
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         scrollToSection(pending)
       })
     })
-  }, [chapterIdx, scrollToSection])
+  }, [blockVersion, scrollToSection])
 
   // Wire global nav callback so inline ref links can navigate chapters
   useEffect(() => {
@@ -446,7 +448,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         </div>
 
         {/* Content — flex:1 + overflow:auto = exactly fills remaining space */}
-        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,scrollBehavior:'smooth'}}>
+        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0}}>
           {current && (
             <ChapterPage
               key={current.unit_id + '-' + blockVersion}
