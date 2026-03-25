@@ -172,7 +172,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     spyTimerRef.current = setTimeout(() => { spyLockedRef.current = false }, ms)
   }, [])
 
-  // Scroll a section to ~50% down the content pane using direct
+  // Scroll a section to ~25% down the content pane using direct
   // position calculation — more reliable than scrollIntoView which
   // can scroll the wrong container on some browsers/OS combinations.
   const scrollToSection = useCallback((sectionId: string) => {
@@ -185,7 +185,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       const elRect = el.getBoundingClientRect()
       const cRect  = c.getBoundingClientRect()
       const relPos  = elRect.top - cRect.top        // pixels from top of visible area
-      const nudge   = c.clientHeight * 0.5         // target: 50% from top
+      const nudge   = c.clientHeight * 0.5         // target: centre of screen
       c.scrollTo({ top: c.scrollTop + relPos - nudge, behavior: 'smooth' })
     }
     doScroll()
@@ -546,20 +546,36 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
 }) {
 
   // ── Scroll to initial section after this chapter renders ──────
-  // useEffect fires AFTER React commits the DOM, so getElementById is
-  // guaranteed to find the element — no polling or timing hacks needed.
-  // This is reliable because ChapterPage renders ALL its sections inline.
+  // useEffect fires AFTER React commits the DOM — getElementById is guaranteed.
+  // BUT images above the target section may not be loaded yet, causing layout
+  // shifts that push the section down after the initial scroll.
+  // Fix: scroll immediately, then watch for layout changes via ResizeObserver
+  // and re-anchor until the position is stable. Killed after 5s.
   useEffect(() => {
     if (!initialSectionId) return
     const el = document.getElementById('sec-' + initialSectionId)
     const c  = scrollContainer.current
     if (!el || !c) return
-    const elRect = el.getBoundingClientRect()
-    const cRect  = c.getBoundingClientRect()
-    const nudge  = c.clientHeight * 0.5
-    c.scrollTo({ top: c.scrollTop + (elRect.top - cRect.top) - nudge, behavior: 'smooth' })
+
+    const scrollToEl = () => {
+      const elRect = el.getBoundingClientRect()
+      const cRect  = c.getBoundingClientRect()
+      c.scrollTo({ top: Math.max(0, c.scrollTop + (elRect.top - cRect.top) - c.clientHeight * 0.5), behavior: 'smooth' })
+    }
+
+    scrollToEl()
+
+    // Re-anchor whenever container content shifts (images loading, tables rendering)
+    let debounce: ReturnType<typeof setTimeout>
+    const ro = new ResizeObserver(() => {
+      clearTimeout(debounce)
+      debounce = setTimeout(scrollToEl, 150)
+    })
+    ro.observe(c)
+    const kill = setTimeout(() => { ro.disconnect(); clearTimeout(debounce) }, 5000)
+    return () => { ro.disconnect(); clearTimeout(debounce); clearTimeout(kill) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSectionId])  // only when the target section changes, not on every re-render
+  }, [initialSectionId])
   const uid    = unit.unit_id
   const uFile  = unitFiles[uid] || unit
   const title  = ml(uFile.title || unit.title)
