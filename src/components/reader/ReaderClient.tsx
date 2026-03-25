@@ -181,26 +181,30 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (!el || !c) return
     lockSpy(2500)
 
-    const doScroll = () => {
+    const getTarget = () => {
       const elRect = el.getBoundingClientRect()
       const cRect  = c.getBoundingClientRect()
-      const relPos  = elRect.top - cRect.top        // pixels from top of visible area
-      const nudge   = c.clientHeight * 0.25         // target: centre of screen
-      c.scrollTo({ top: c.scrollTop + relPos - nudge, behavior: 'smooth' })
+      return Math.max(0, c.scrollTop + (elRect.top - cRect.top) - c.clientHeight * 0.4)
     }
-    doScroll()
 
-    // Re-anchor if content above loads and shifts the element down
-    let t: ReturnType<typeof setTimeout>
+    c.scrollTo({ top: getTarget(), behavior: 'smooth' })
+
+    // Wait for smooth animation to finish before watching for image shifts
+    let debounce: ReturnType<typeof setTimeout>
+    let started = false
     const ro = new ResizeObserver(() => {
-      clearTimeout(t)
-      t = setTimeout(doScroll, 120)
+      if (!started) return
+      clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        c.scrollTo({ top: getTarget(), behavior: 'instant' as ScrollBehavior })
+      }, 100)
     })
-    ro.observe(c)
-    const kill = setTimeout(() => { ro.disconnect(); clearTimeout(t) }, 5000)
+    const startTimer = setTimeout(() => { started = true; ro.observe(c) }, 400)
+    const kill = setTimeout(() => { ro.disconnect(); clearTimeout(debounce) }, 5000)
     const mo = new MutationObserver(() => {
       if (!document.contains(el)) {
-        ro.disconnect(); clearTimeout(t); clearTimeout(kill); mo.disconnect()
+        ro.disconnect(); clearTimeout(debounce); clearTimeout(startTimer)
+        clearTimeout(kill); mo.disconnect()
         clearTimeout(spyTimerRef.current); spyLockedRef.current = false
       }
     })
@@ -557,23 +561,32 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
     const c  = scrollContainer.current
     if (!el || !c) return
 
-    const scrollToEl = () => {
+    const getTarget = () => {
       const elRect = el.getBoundingClientRect()
       const cRect  = c.getBoundingClientRect()
-      c.scrollTo({ top: Math.max(0, c.scrollTop + (elRect.top - cRect.top) - c.clientHeight * 0.25), behavior: 'smooth' })
+      return Math.max(0, c.scrollTop + (elRect.top - cRect.top) - c.clientHeight * 0.4)
     }
 
-    scrollToEl()
+    // Initial scroll — smooth so it feels intentional
+    c.scrollTo({ top: getTarget(), behavior: 'smooth' })
 
-    // Re-anchor whenever container content shifts (images loading, tables rendering)
+    // After smooth scroll settles (~350ms), watch for image load shifts
+    // and re-anchor with instant scroll so we don't fight the animation
     let debounce: ReturnType<typeof setTimeout>
+    let started = false
     const ro = new ResizeObserver(() => {
+      if (!started) return   // ignore shifts during the smooth animation
       clearTimeout(debounce)
-      debounce = setTimeout(scrollToEl, 150)
+      debounce = setTimeout(() => {
+        c.scrollTo({ top: getTarget(), behavior: 'instant' as ScrollBehavior })
+      }, 100)
     })
-    ro.observe(c)
+    const startTimer = setTimeout(() => { started = true; ro.observe(c) }, 400)
     const kill = setTimeout(() => { ro.disconnect(); clearTimeout(debounce) }, 5000)
-    return () => { ro.disconnect(); clearTimeout(debounce); clearTimeout(kill) }
+    return () => {
+      ro.disconnect()
+      clearTimeout(debounce); clearTimeout(startTimer); clearTimeout(kill)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSectionId])
   const uid    = unit.unit_id
