@@ -37,9 +37,9 @@
   html { font-family: 'EB Garamond','Times New Roman',Times,serif; font-size:16px; }
   body { background: var(--cream); color: var(--ink); }
 
-  /* Skip nav */
+  /* Skip nav — hidden far above viewport, appears on keyboard focus */
   .skip-nav {
-    position:fixed; top:-100px; left:12px; z-index:9999;
+    position:fixed; top:-200px; left:12px; z-index:9999;
     background:var(--saffron); color:#000; font-weight:700;
     padding:8px 16px; border-radius:0 0 6px 6px; transition:top .2s;
   }
@@ -199,50 +199,52 @@ html { scroll-behavior: smooth; }
 .reader-mode [style*="font-size:14.5px"] { font-size: 16.5px !important; }
 
 /* ── Accessibility overrides ─────────────────────────────────
-   Applied via classes on <html> by A11yBar component.
+   Components use hardcoded inline hex colours so CSS variable
+   overrides alone don't work. We use filter on rendered pixels.
 
-   KEY PRINCIPLE: Most components use hardcoded inline hex colours
-   (background:'#fff', color:'#1a3a6b' etc). CSS variable overrides
-   only work when the element uses var(--token). So for dark mode,
-   invert, and contrast we apply filter to <body> which affects
-   ALL rendered pixels — including hardcoded inline styles.        */
+   IMPORTANT: Never apply filter to <body> — it makes position:fixed
+   children (skip-nav, reader nav bar) positioned relative to body
+   instead of the viewport, breaking their layout.                  */
 
-/* Text size — zoom scales everything including px inline styles */
+/* Text size */
 html.text-size--1 #page-content { zoom: 0.88; }
 html.text-size-1  #page-content { zoom: 1.18; }
 html.text-size-2  #page-content { zoom: 1.38; }
 
-/* High contrast — apply to body so fixed elements are included */
-html.a11y-high-contrast body { filter: contrast(1.6); }
+/* High contrast — on #page-content only, not on header/footer/skip-nav */
+html.a11y-high-contrast #page-content { filter: contrast(1.6); }
 
-/* Invert — apply to body, then re-invert images/video back.
-   Applying to html can miss position:fixed elements in some browsers. */
-html.a11y-invert body {
-  filter: invert(1) hue-rotate(180deg);
+/* Invert colours — on #page-content.
+   Header and footer are already dark (navy) so they look fine uninverted.
+   Re-invert images/video back to natural colours.                    */
+html.a11y-invert #page-content {
+  filter: invert(1);
 }
 html.a11y-invert img,
 html.a11y-invert video,
-html.a11y-invert [class*="emblem"],
 html.a11y-invert canvas {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(1);
 }
 
-/* Dark mode — filter-based so it works on ALL colours including
-   hardcoded hex in inline styles. brightness(0.9) softens the
-   harsh invert; hue-rotate(180deg) maps blues/greens back to
-   roughly correct hues. Re-invert images so photos look normal. */
+/* Dark mode — same approach as invert, with slight brightness softening.
+   NO hue-rotate: that was turning navy into light blue.
+   Header/footer are already dark navy — they need no treatment.
+   Body background darkened so the gap around #page-content is dark too. */
 html.a11y-dark body {
-  filter: invert(1) hue-rotate(180deg) brightness(0.9);
+  background: #111 !important;
+}
+html.a11y-dark #page-content {
+  filter: invert(1) brightness(0.92);
 }
 html.a11y-dark img,
 html.a11y-dark video,
 html.a11y-dark canvas {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(1) brightness(1.08);
 }
 
-/* When both dark + invert are on, cancel each other out */
-html.a11y-dark.a11y-invert body { filter: none; }
-html.a11y-dark.a11y-invert img  { filter: none; }
+/* When both modes are on, cancel each other out */
+html.a11y-dark.a11y-invert #page-content { filter: none; }
+html.a11y-dark.a11y-invert img           { filter: none; }
 
 
 /* ── Reports listing page ────────────────────────────────────── */
