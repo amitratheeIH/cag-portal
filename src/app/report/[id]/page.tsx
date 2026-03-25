@@ -310,12 +310,10 @@ export default async function ReportLandingPage({ params }: Props) {
                         const secTitle = ml(sec.title)
                         return (
                           <Link key={sec.unit_id} href={`/report/${params.id}/read?unit=${sec.unit_id}`} style={{ textDecoration:'none', display:'block' }}>
-                            <div style={{
+                            <div className="section-row" style={{
                               display:'flex', alignItems:'center', gap:'10px',
                               padding:'5px 18px 5px 72px',
-                            }}
-                            onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='var(--cream)'}
-                            onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
+                            }}>
                               {secPnum && <span style={{ fontFamily:'system-ui', fontSize:'10px', fontWeight:700, color:colour, flexShrink:0, minWidth:'28px' }}>{secPnum}</span>}
                               <span style={{ fontFamily:'system-ui', fontSize:'12px', color:'var(--ink2)', lineHeight:1.4 }}>{secTitle}</span>
                             </div>

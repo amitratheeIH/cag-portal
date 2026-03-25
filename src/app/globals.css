@@ -242,6 +242,9 @@ html.a11y-dark #page-content { background: #141412; }
   box-shadow: 0 4px 16px rgba(26,58,107,.1) !important;
   border-color: var(--navy) !important;
 }
+.section-row:hover {
+  background: var(--cream);
+}
 
 /* ── Reader active — locks outer page scroll ─────────────────
    Applied to <html> for the entire lifetime of the reader page.
