@@ -200,38 +200,49 @@ html { scroll-behavior: smooth; }
 
 /* ── Accessibility overrides ─────────────────────────────────
    Applied via classes on <html> by A11yBar component.
-   Must live here (not in a page component) to affect every page. */
+
+   KEY PRINCIPLE: Most components use hardcoded inline hex colours
+   (background:'#fff', color:'#1a3a6b' etc). CSS variable overrides
+   only work when the element uses var(--token). So for dark mode,
+   invert, and contrast we apply filter to <body> which affects
+   ALL rendered pixels — including hardcoded inline styles.        */
 
 /* Text size — zoom scales everything including px inline styles */
 html.text-size--1 #page-content { zoom: 0.88; }
-/* text-size-0 is default — no rule needed */
 html.text-size-1  #page-content { zoom: 1.18; }
 html.text-size-2  #page-content { zoom: 1.38; }
 
-/* High contrast */
-html.a11y-high-contrast { filter: contrast(1.5); }
+/* High contrast — apply to body so fixed elements are included */
+html.a11y-high-contrast body { filter: contrast(1.6); }
 
-/* Invert colours */
-html.a11y-invert { filter: invert(1) hue-rotate(180deg); }
-html.a11y-invert img,
-html.a11y-invert video { filter: invert(1) hue-rotate(180deg); }
-
-/* Dark mode */
-html.a11y-dark {
-  --ink:      #e8e4dc;
-  --ink2:     #c8c4bc;
-  --ink3:     #908c84;
-  --page:     #1a1a18;
-  --cream:    #141412;
-  --rule:     #302e28;
-  --rule-lt:  #28261f;
-  --navy-lt:  #1a2a40;
-  --green-lt: #0e2016;
-  --red-lt:   #200a0a;
-  --amber-lt: #1a1200;
+/* Invert — apply to body, then re-invert images/video back.
+   Applying to html can miss position:fixed elements in some browsers. */
+html.a11y-invert body {
+  filter: invert(1) hue-rotate(180deg);
 }
-html.a11y-dark body    { background: #141412; }
-html.a11y-dark #page-content { background: #141412; }
+html.a11y-invert img,
+html.a11y-invert video,
+html.a11y-invert [class*="emblem"],
+html.a11y-invert canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Dark mode — filter-based so it works on ALL colours including
+   hardcoded hex in inline styles. brightness(0.9) softens the
+   harsh invert; hue-rotate(180deg) maps blues/greens back to
+   roughly correct hues. Re-invert images so photos look normal. */
+html.a11y-dark body {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9);
+}
+html.a11y-dark img,
+html.a11y-dark video,
+html.a11y-dark canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* When both dark + invert are on, cancel each other out */
+html.a11y-dark.a11y-invert body { filter: none; }
+html.a11y-dark.a11y-invert img  { filter: none; }
 
 
 /* ── Reports listing page ────────────────────────────────────── */
