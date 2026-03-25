@@ -71,8 +71,8 @@ export default async function ReportLandingPage({ params }: Props) {
     recommendations.sort((a,b)=>a.block_id.localeCompare(b.block_id))
   }
 
-  // Build section→AFC map: afcId → [para_numbers that have it]
-  const sectionAfcMap: Record<string,string[]> = {}
+  // Build section→AFC map: afcId → [{ pnum, unit_id }]
+  const sectionAfcMap: Record<string,{ pnum:string; unit_id:string }[]> = {}
   if (structure) {
     const allU = [...(structure.front_matter||[]),...(structure.content_units||[]),...(structure.back_matter||[])]
     for (const u of allU) {
@@ -82,7 +82,7 @@ export default async function ReportLandingPage({ params }: Props) {
       const afcs = ((u as ContentUnit & {metadata?:{audit_findings_categories?:string[]}}).metadata?.audit_findings_categories)||[]
       for (const afc of afcs) {
         if (!sectionAfcMap[afc]) sectionAfcMap[afc] = []
-        sectionAfcMap[afc].push(pnum)
+        sectionAfcMap[afc].push({ pnum, unit_id: u.unit_id })
       }
     }
   }
@@ -334,8 +334,9 @@ export default async function ReportLandingPage({ params }: Props) {
             detailRows={detailRows}
             topics={topics}
             afcCats={afcCats}
-            sectionAfcMap={sectionAfcMap}
+            sectionAfcMap={sectionAfcMap as Record<string,{pnum:string;unit_id:string}[]>}
             recommendations={recommendations}
+            reportId={params.id}
           />
         </div>
 

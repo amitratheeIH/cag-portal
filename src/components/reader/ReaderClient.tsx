@@ -439,8 +439,23 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           zIndex:10,
         }}>
 
-          {/* Left: TOC toggle + chapter title */}
-          <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
+          {/* Left: Back button + TOC toggle + chapter title */}
+          <div style={{display:'flex',alignItems:'center',gap:'4px',minWidth:0,flex:1}}>
+            {/* Back to report landing page */}
+            <a href={`/report/${productId}`}
+              title="Back to report"
+              style={{
+                display:'flex', alignItems:'center', gap:'4px',
+                padding:'4px 8px', borderRadius:'5px', flexShrink:0,
+                fontFamily:'system-ui', fontSize:'11px', fontWeight:600,
+                color:'var(--navy)', background:'var(--navy-lt)',
+                textDecoration:'none', border:'1px solid rgba(26,58,107,.15)',
+              }}>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path d="m15 18-6-6 6-6"/>
+              </svg>
+              <span className="hidden sm:inline">Report</span>
+            </a>
             <button onClick={()=>setTocOpen(v=>!v)}
               title="Toggle contents"
               style={{padding:'5px',border:'none',background:'none',cursor:'pointer',color:'#888',borderRadius:'4px',flexShrink:0}}>
@@ -567,8 +582,8 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
   const fnotes = collectChapterFn(uid, descendantUids)
 
   return (
-    <div style={{padding:'0 0 48px'}}>
-      {/* Paper — no minHeight, just natural flow */}
+    <div style={{padding:'0'}}>
+      {/* Paper */}
       <div
         className={readerMode ? 'reader-mode' : ''}
         style={{

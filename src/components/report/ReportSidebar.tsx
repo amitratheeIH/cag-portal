@@ -110,12 +110,11 @@ function buildGroups<T extends { parentId:string; parentLabel:string; subLabel:s
 
 // ── Reusable collapsible group row ───────────────────────────
 function GroupRow({
-  parentLabel, colour, subs, extra, defaultOpen = false,
+  parentLabel, colour, subs, defaultOpen = false,
 }: {
   parentLabel: string
   colour: string
-  subs: { label:string; tags?:string[] }[]
-  extra?: React.ReactNode
+  subs: { label:string; tags?:{ pnum:string; href:string }[] }[]
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -135,7 +134,6 @@ function GroupRow({
       </button>
       {open && (
         <div style={{ paddingBottom:'6px' }}>
-          {extra}
           {subs.map((sub, i) => (
             <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:'8px', padding:'4px 16px 4px 30px' }}>
               <div style={{ width:'4px', height:'4px', borderRadius:'50%', background:colour+'70', flexShrink:0, marginTop:'6px' }}/>
@@ -144,12 +142,19 @@ function GroupRow({
                 {sub.tags && sub.tags.length > 0 && (
                   <div style={{ display:'flex', gap:'4px', flexWrap:'wrap', marginTop:'3px' }}>
                     {sub.tags.map(t => (
-                      <span key={t} style={{
+                      <a key={t.href} href={t.href} style={{
                         fontFamily:'system-ui', fontSize:'9.5px', fontWeight:600,
                         background:colour+'14', color:colour,
-                        padding:'1px 6px', borderRadius:'8px',
+                        padding:'1px 7px', borderRadius:'8px',
                         border:`1px solid ${colour}30`,
-                      }}>§{t}</span>
+                        textDecoration:'none', cursor:'pointer',
+                        transition:'background .12s',
+                      }}
+                      onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background=colour+'28'}
+                      onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background=colour+'14'}
+                      title={`Go to section ${t.pnum}`}>
+                        §{t.pnum}
+                      </a>
                     ))}
                   </div>
                 )}
@@ -237,11 +242,12 @@ interface Props {
   detailRows:     { label:string; value:string }[]
   topics:         string[]
   afcCats:        string[]
-  sectionAfcMap:  Record<string,string[]>   // afcId → [para_numbers]
+  sectionAfcMap:  Record<string,{ pnum:string; unit_id:string }[]>
   recommendations: { block_id:string; text:string }[]
+  reportId:       string
 }
 
-export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcMap, recommendations }: Props) {
+export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcMap, recommendations, reportId }: Props) {
   const afcGroups  = buildGroups(afcCats, AFC_MAP, id => ({ parentId:'other', parentLabel:'Other Findings', subLabel: id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) }))
   const topicGroups = buildGroups(topics, TOPICS_MAP, topicFallback)
 
@@ -276,7 +282,7 @@ export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcM
         </section>
       )}
 
-      {/* AFC — hierarchical with section refs */}
+      {/* AFC — hierarchical with clickable section refs */}
       {afcGroups.length > 0 && (
         <section style={{ background:'#fff', border:'1px solid var(--rule)', borderRadius:'10px', overflow:'hidden', marginBottom:'14px' }}>
           <SectionHeader title="Audit Finding Categories" hint="· click to expand" />
@@ -286,7 +292,10 @@ export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcM
               colour={AFC_COLOURS[g.parentId]||'#1a3a6b'}
               subs={g.subs.map(s => ({
                 label: s.label,
-                tags:  sectionAfcMap[s.id] || [],
+                tags:  (sectionAfcMap[s.id] || []).map(({ pnum, unit_id }) => ({
+                  pnum,
+                  href: `/report/${reportId}/read?unit=${unit_id}`,
+                })),
               }))}
             />
           ))}
