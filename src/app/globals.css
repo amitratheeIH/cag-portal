@@ -234,6 +234,7 @@ html.a11y-dark body    { background: #141412; }
 html.a11y-dark #page-content { background: #141412; }
 
 
+/* ── Reader active — locks outer page scroll ─────────────────
    Applied to <html> for the entire lifetime of the reader page.
    Prevents the site footer and any content below the reader from
    being reachable via an outer scrollbar.                        */
