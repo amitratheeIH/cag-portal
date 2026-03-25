@@ -172,7 +172,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     spyTimerRef.current = setTimeout(() => { spyLockedRef.current = false }, ms)
   }, [])
 
-  // Scroll a section to ~25% down the content pane using direct
+  // Scroll a section to ~50% down the content pane using direct
   // position calculation — more reliable than scrollIntoView which
   // can scroll the wrong container on some browsers/OS combinations.
   const scrollToSection = useCallback((sectionId: string) => {
@@ -185,7 +185,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       const elRect = el.getBoundingClientRect()
       const cRect  = c.getBoundingClientRect()
       const relPos  = elRect.top - cRect.top        // pixels from top of visible area
-      const nudge   = c.clientHeight * 0.25         // target: 25% from top
+      const nudge   = c.clientHeight * 0.5         // target: 50% from top
       c.scrollTo({ top: c.scrollTop + relPos - nudge, behavior: 'smooth' })
     }
     doScroll()
@@ -556,7 +556,7 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
     if (!el || !c) return
     const elRect = el.getBoundingClientRect()
     const cRect  = c.getBoundingClientRect()
-    const nudge  = c.clientHeight * 0.25
+    const nudge  = c.clientHeight * 0.5
     c.scrollTo({ top: c.scrollTop + (elRect.top - cRect.top) - nudge, behavior: 'smooth' })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSectionId])  // only when the target section changes, not on every re-render
