@@ -1,11 +1,8 @@
 'use client'
 
 // ReportSidebar.tsx
-// Owns all interactive sidebar sections:
-//   - Report Details (static table)
-//   - Topics (hierarchical, collapsible)
-//   - Audit Finding Categories (hierarchical + section refs, collapsible)
-//   - Recommendations (collapsible, closed by default)
+import React, { useState } from 'react'
+import { afcLabel } from '@/lib/taxonomy-labels'
 
 import React, { useState } from 'react'
 
@@ -248,7 +245,7 @@ interface Props {
 }
 
 export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcMap, recommendations, reportId }: Props) {
-  const afcGroups  = buildGroups(afcCats, AFC_MAP, id => ({ parentId:'other', parentLabel:'Other Findings', subLabel: id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) }))
+  const afcGroups  = buildGroups(afcCats, AFC_MAP, id => ({ parentId:'other', parentLabel:'Other Findings', subLabel: afcLabel(id) }))
   const topicGroups = buildGroups(topics, TOPICS_MAP, topicFallback)
 
   return (

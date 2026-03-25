@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
 import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex, setAnnVisible, getAnnVisible, setRefIndex, setNavCallback } from '@/components/blocks/BlockRenderer'
+import { afcLabel } from '@/lib/taxonomy-labels'
 
 // ── Footnote types ────────────────────────────────────────────
 interface Fn {
@@ -96,9 +97,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 
   const [flatUnits, setFlatUnits] = useState<FlatUnit[]>([])
   const [chapterIdx, setChapterIdx] = useState(0)
+  const [initialSectionId, setInitialSectionId] = useState<string | null>(null)
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [annVisible, setAnnVisibleState] = useState(false)
-  const [blockVersion, setBlockVersion] = useState(0)  // increments when fn/ann/ref indexes update
+  const [blockVersion, setBlockVersion] = useState(0)
   const [readerMode, setReaderMode] = useState(false)
 
   const toggleAnnotations = () => {
@@ -135,7 +137,6 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('resize', check)
   }, [])
   const contentRef        = useRef<HTMLDivElement>(null)
-  const pendingSectionRef  = useRef<string | null>(null)
   const spyLockedRef       = useRef(false)
   const spyTimerRef        = useRef<ReturnType<typeof setTimeout>>()
 
@@ -152,7 +153,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       if (u) {
         const rootUid = u.parent_id || u.unit_id
         const ri = tops.findIndex(t => t.unit_id === rootUid)
-        if (ri >= 0) { setChapterIdx(ri); return }
+        if (ri >= 0) {
+          setChapterIdx(ri)
+          // If it's a section (not the chapter itself), set initialSectionId
+          if (u.parent_id) setInitialSectionId(unitIdFromUrl)
+          return
+        }
       }
     }
     setChapterIdx(0)
@@ -166,35 +172,32 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     spyTimerRef.current = setTimeout(() => { spyLockedRef.current = false }, ms)
   }, [])
 
-  // Scroll a section to ~25% down the content pane.
-  // Uses scrollIntoView(instant) so the browser positions correctly regardless of
-  // whether images/tables above have loaded, then smooth-nudges back 25%.
-  // ResizeObserver re-anchors if async content shifts the element down afterwards.
+  // Scroll a section to ~25% down the content pane using direct
+  // position calculation — more reliable than scrollIntoView which
+  // can scroll the wrong container on some browsers/OS combinations.
   const scrollToSection = useCallback((sectionId: string) => {
     const el = document.getElementById('sec-' + sectionId)
     const c  = contentRef.current
     if (!el || !c) return
-    const nudge = c.clientHeight * 0.25
+    lockSpy(2500)
 
     const doScroll = () => {
-      lockSpy(2500)
-      el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
-      c.scrollBy({ top: -nudge, behavior: 'smooth' })
+      const elRect = el.getBoundingClientRect()
+      const cRect  = c.getBoundingClientRect()
+      const relPos  = elRect.top - cRect.top        // pixels from top of visible area
+      const nudge   = c.clientHeight * 0.25         // target: 25% from top
+      c.scrollTo({ top: c.scrollTop + relPos - nudge, behavior: 'smooth' })
     }
     doScroll()
 
-    // Re-anchor each time content above the target grows (images, dataset tables)
+    // Re-anchor if content above loads and shifts the element down
     let t: ReturnType<typeof setTimeout>
     const ro = new ResizeObserver(() => {
       clearTimeout(t)
-      t = setTimeout(() => {
-        const rel = el.getBoundingClientRect().top - c.getBoundingClientRect().top
-        if (rel > nudge + 60 && rel < c.clientHeight * 0.9) doScroll()
-      }, 100)
+      t = setTimeout(doScroll, 120)
     })
     ro.observe(c)
     const kill = setTimeout(() => { ro.disconnect(); clearTimeout(t) }, 5000)
-    // Release on chapter change
     const mo = new MutationObserver(() => {
       if (!document.contains(el)) {
         ro.disconnect(); clearTimeout(t); clearTimeout(kill); mo.disconnect()
@@ -208,44 +211,21 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (idx < 0 || idx >= chapters.length) return
     const chapterChanged = idx !== chapterIdx
     setChapterIdx(idx)
+    setInitialSectionId(sectionId || null)  // ChapterPage will scroll itself
     if (sectionId) { setActiveSectionId(sectionId); lockSpy(2500) }
     else setActiveSectionId(null)
-    if (chapterChanged) {
-      contentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
-      pendingSectionRef.current = sectionId || null
-    } else if (sectionId) {
+    if (!chapterChanged && sectionId) {
+      // Same chapter — scroll immediately, don't wait for re-render
       scrollToSection(sectionId)
-    } else {
+      setInitialSectionId(null)
+    } else if (!chapterChanged) {
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     }
+    // Cross-chapter: ChapterPage mounts fresh with initialSectionId — scrolls itself
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
     if (window.innerWidth < 768) setTocOpen(false)
   }, [chapters, chapterIdx, productId, scrollToSection, lockSpy])
-
-  // Fire pending section scroll after a chapter switch.
-  // Uses polling (up to 2s) to wait for the section element to appear
-  // in the DOM — blockVersion is not reliable enough because it only
-  // increments when fn/ref indexes change, which may race with render.
-  useEffect(() => {
-    const pending = pendingSectionRef.current
-    if (!pending) return
-    pendingSectionRef.current = null
-
-    let attempts = 0
-    const MAX = 20   // 20 × 100ms = 2 seconds max
-    const poll = () => {
-      const el = document.getElementById('sec-' + pending)
-      if (el) {
-        scrollToSection(pending)
-      } else if (++attempts < MAX) {
-        setTimeout(poll, 100)
-      }
-      // If element never appears, silently give up (e.g. section has no anchor)
-    }
-    // First attempt after two animation frames (React render + paint)
-    requestAnimationFrame(() => requestAnimationFrame(poll))
-  }, [chapterIdx, scrollToSection])   // fires every time chapter changes
 
   // Wire global nav callback so inline ref links can navigate chapters
   useEffect(() => {
@@ -544,6 +524,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
               prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
               onNavigate={goTo} chapterIdx={chapterIdx} readerMode={readerMode}
               blockVersion={blockVersion}
+              initialSectionId={initialSectionId}
+              scrollContainer={contentRef}
             />
           )}
         </div>
@@ -554,12 +536,30 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion }: {
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion, initialSectionId, scrollContainer }: {
   unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   prev?: FlatUnit; next?: FlatUnit
   onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean; blockVersion?: number
+  initialSectionId?: string | null
+  scrollContainer: React.RefObject<HTMLDivElement>
 }) {
+
+  // ── Scroll to initial section after this chapter renders ──────
+  // useEffect fires AFTER React commits the DOM, so getElementById is
+  // guaranteed to find the element — no polling or timing hacks needed.
+  // This is reliable because ChapterPage renders ALL its sections inline.
+  useEffect(() => {
+    if (!initialSectionId) return
+    const el = document.getElementById('sec-' + initialSectionId)
+    const c  = scrollContainer.current
+    if (!el || !c) return
+    const elRect = el.getBoundingClientRect()
+    const cRect  = c.getBoundingClientRect()
+    const nudge  = c.clientHeight * 0.25
+    c.scrollTo({ top: c.scrollTop + (elRect.top - cRect.top) - nudge, behavior: 'smooth' })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSectionId])  // only when the target section changes, not on every re-render
   const uid    = unit.unit_id
   const uFile  = unitFiles[uid] || unit
   const title  = ml(uFile.title || unit.title)
@@ -624,7 +624,7 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
               <div style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'12px'}}>
                 {afcCats.map(cat=>(
                   <span key={cat} style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:'#edf1f8',color:'#1a3a6b',border:'1px solid #c5d5ee'}}>
-                    {cat.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())}
+                    {afcLabel(cat)}
                   </span>
                 ))}
               </div>
@@ -700,7 +700,7 @@ function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1, blockVers
         <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'12px'}}>
           {afc.map(cat=>(
             <span key={cat} style={{fontFamily:'system-ui',fontSize:'9.5px',fontWeight:600,padding:'2px 7px',borderRadius:'10px',background:'#f0f4fa',color:'#1a3a6b',border:'1px solid #d0ddf0'}}>
-              {cat.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())}
+              {afcLabel(cat)}
             </span>
           ))}
         </div>
