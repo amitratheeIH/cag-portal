@@ -304,6 +304,15 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('keydown', h)
   }, [chapterIdx, goTo, readerMode])
 
+  // Lock the outer page scroll for the entire lifetime of the reader.
+  // The reader fills the viewport exactly — the outer body scroll and the
+  // site footer must not be reachable, otherwise two independent scrollbars
+  // exist and elements get hidden behind/below the reader.
+  useEffect(() => {
+    document.documentElement.classList.add('reader-active')
+    return () => document.documentElement.classList.remove('reader-active')
+  }, [])
+
   // Measure the site header height and keep --site-header-h CSS variable
   // current. ResizeObserver fires immediately on mount and whenever the
   // header resizes (including when reader mode hides it → height becomes 0).

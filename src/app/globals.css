@@ -194,6 +194,22 @@ html { scroll-behavior: smooth; }
 .reader-mode [style*="font-size: 14.5px"],
 .reader-mode [style*="font-size:14.5px"] { font-size: 16.5px !important; }
 
+/* ── Reader active — locks outer page scroll ─────────────────
+   Applied to <html> for the entire lifetime of the reader page.
+   Prevents the site footer and any content below the reader from
+   being reachable via an outer scrollbar.                        */
+html.reader-active body {
+  overflow: hidden;
+}
+html.reader-active #site-footer {
+  display: none !important;
+}
+html.reader-active #page-content {
+  height: calc(100dvh - var(--site-header-h));
+  height: calc(100vh  - var(--site-header-h));
+  overflow: hidden;
+}
+
 /* ── Reader fullscreen mode ──────────────────────────────── */
 html.reader-fullscreen header[role="banner"] {
   transform: translateY(-100%);
