@@ -215,17 +215,19 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (idx < 0 || idx >= chapters.length) return
     const chapterChanged = idx !== chapterIdx
     setChapterIdx(idx)
-    setInitialSectionId(sectionId || null)  // ChapterPage will scroll itself
+    setInitialSectionId(sectionId || null)
     if (sectionId) { setActiveSectionId(sectionId); lockSpy(2500) }
     else setActiveSectionId(null)
-    if (!chapterChanged && sectionId) {
-      // Same chapter — scroll immediately, don't wait for re-render
+    if (chapterChanged) {
+      // Always reset to top when changing chapters — scroll container preserves
+      // its scrollTop across React re-renders so we must reset it explicitly.
+      contentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    } else if (sectionId) {
       scrollToSection(sectionId)
       setInitialSectionId(null)
-    } else if (!chapterChanged) {
+    } else {
       contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     }
-    // Cross-chapter: ChapterPage mounts fresh with initialSectionId — scrolls itself
     const uid = sectionId || chapters[idx]?.unit_id
     if (uid) window.history.replaceState(null, '', `/report/${productId}?unit=${uid}`)
     if (window.innerWidth < 768) setTocOpen(false)
