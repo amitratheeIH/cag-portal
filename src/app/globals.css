@@ -142,13 +142,12 @@ html { scroll-behavior: smooth; }
 .toc-closed { width: 0;    transition: width .2s ease; }
 
 /* Mobile: fixed overlay — does NOT push content.
-   Top = site header height + reader nav bar height.
-   Both values are CSS variables so they auto-update
-   when the header collapses (reader mode) or is resized. */
+   Sits below the site header. The reader nav bar is in normal flex flow
+   so it doesn't need to be accounted for here.                         */
 @media (max-width: 767px) {
   .toc-open {
     position: fixed !important;
-    top: calc(var(--site-header-h) + var(--reader-nav-h));
+    top: var(--site-header-h);
     bottom: 0; left: 0;
     width: min(85vw, 320px) !important;
     z-index: 50;
@@ -156,7 +155,7 @@ html { scroll-behavior: smooth; }
   }
   .toc-closed {
     position: fixed !important;
-    top: calc(var(--site-header-h) + var(--reader-nav-h));
+    top: var(--site-header-h);
     bottom: 0; left: 0;
     width: 0 !important;
     z-index: 50;

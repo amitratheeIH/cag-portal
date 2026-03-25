@@ -322,15 +322,6 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => ro.disconnect()
   }, [])
 
-  // Lock body scroll on mobile — prevents scrollIntoView from scrolling the
-  // body instead of the content pane, which would pull the nav bar off-screen.
-  useEffect(() => {
-    if (!isMobile) return
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = prev }
-  }, [isMobile])
-
   // Clean up on unmount
   useEffect(() => {
     return () => { document.documentElement.classList.remove('reader-fullscreen') }
@@ -396,28 +387,24 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     </div>
   )
 
+  // ── Main ────────────────────────────────────────────────────
+  // Three-row flex column: nav bar | scrollable content | prev/next footer
+  // All three are always visible — no position:fixed needed anywhere.
+  // flex layout handles this cleanly on both desktop and mobile.
   return (
-    <div style={{display:'flex', height: readerMode ? '100vh' : 'calc(100vh - var(--site-header-h))', minHeight:'-webkit-fill-available', overflow:'hidden', transition:'height .25s ease'}} className="reader-root">
+    <div style={{display:'flex', height: readerMode ? '100dvh' : 'calc(100dvh - var(--site-header-h))', minHeight:'-webkit-fill-available', overflow:'hidden', transition:'height .25s ease'}} className="reader-root">
 
       {/* ── TOC ─────────────────────────────────── */}
-      {/* Overlay backdrop on mobile when TOC is open */}
       {tocOpen && isMobile && (
-        <div
-          onClick={()=>setTocOpen(false)}
-          style={{
-            position:'fixed',inset:0,background:'rgba(0,0,0,.35)',zIndex:40,
-          }}
-        />
+        <div onClick={()=>setTocOpen(false)}
+          style={{position:'fixed',inset:0,background:'rgba(0,0,0,.35)',zIndex:40}}/>
       )}
       <aside
         className={tocOpen ? 'toc-open' : 'toc-closed'}
         style={{
-          flexShrink: 0,
-          overflow: 'hidden',
-          borderRight: '1px solid #d4d0ca',
-          background: '#f9f8f6',
-          display: 'flex',
-          flexDirection: 'column',
+          flexShrink: 0, overflow: 'hidden',
+          borderRight: '1px solid #d4d0ca', background: '#f9f8f6',
+          display: 'flex', flexDirection: 'column',
         }}>
         <div style={{padding:'12px 16px 8px',borderBottom:'1px solid #e4e0d8',flexShrink:0}}>
           <span style={{fontFamily:'system-ui',fontSize:'10px',fontWeight:700,letterSpacing:'1.3px',textTransform:'uppercase',color:'#999'}}>
@@ -431,25 +418,17 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         </div>
       </aside>
 
-      {/* ── Main ────────────────────────────────── */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
+      {/* ── Main column: 3-row flex ──────────────── */}
+      <div style={{flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden'}}>
 
-        {/* ── Nav bar ─────────────────────────────────────────────────────────
-             On mobile: position fixed so it is ALWAYS visible — cannot be
-             covered by the TOC overlay (zIndex:50) or scrolled away by the
-             browser. zIndex:55 sits above everything.
-             On desktop: position relative, stays in normal flex flow.        */}
+        {/* Row 1: Nav bar — flexShrink:0, never scrolls */}
         <div style={{
-          height:'var(--reader-nav-h)', flexShrink:0, display:'flex', alignItems:'center',
-          justifyContent:'space-between', padding:'0 10px',
+          height:'var(--reader-nav-h)', flexShrink:0,
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'0 10px', gap:'6px',
           borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
-          zIndex: 55,
-          position: isMobile ? 'fixed' : 'relative',
-          top:   isMobile ? 'var(--site-header-h)' : 'auto',
-          left:  isMobile ? 0      : 'auto',
-          right: isMobile ? 0      : 'auto',
-          gap:'6px',
-        } as React.CSSProperties}>
+          zIndex:10,
+        }}>
 
           {/* Left: TOC toggle + chapter title */}
           <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
@@ -517,23 +496,33 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           </div>
         </div>
 
-        {/* Content — the single scroll pane.
-            On mobile: paddingTop offsets the fixed nav bar so content
-            starts below it. In reader mode the site header is gone so
-            the nav bar sits at top:0 — only var(--reader-nav-h) offset needed. */}
-        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain', paddingTop: isMobile ? 'var(--reader-nav-h)' : 0}}>
+        {/* Row 2: Content — flex:1, scrolls */}
+        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain'}}>
           {current && (
             <ChapterPage
               key={current.unit_id}
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
-              prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
               onNavigate={goTo} chapterIdx={chapterIdx} readerMode={readerMode}
               blockVersion={blockVersion}
             />
           )}
         </div>
 
+        {/* Row 3: Prev/Next footer — flexShrink:0, always visible at bottom */}
+        <div style={{
+          flexShrink:0, display:'flex', gap:'8px', padding:'8px 10px',
+          borderTop:'1px solid #d4d0ca', background:'#f9f8f6',
+        }}>
+          {hasPrev
+            ? <NavBtn unit={chapters[chapterIdx-1]} dir="prev" onClick={()=>goTo(chapterIdx-1)}/>
+            : <div style={{flex:1}}/>
+          }
+          {hasNext
+            ? <NavBtn unit={chapters[chapterIdx+1]} dir="next" onClick={()=>goTo(chapterIdx+1)}/>
+            : <div style={{flex:1}}/>
+          }
+        </div>
 
       </div>
     </div>
@@ -541,10 +530,9 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion }: {
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, onNavigate, chapterIdx, readerMode, blockVersion }: {
   unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
-  prev?: FlatUnit; next?: FlatUnit
   onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean; blockVersion?: number
 }) {
   const uid    = unit.unit_id
@@ -631,14 +619,6 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
           ))}
 
           {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
-
-          {/* Prev/Next — inside the paper, appears naturally when scrolled to bottom */}
-          {(prev || next) && (
-            <div style={{marginTop:'48px',paddingTop:'20px',borderTop:'1px solid #e4e0d8',display:'flex',gap:'10px'}} className="sm:flex-row">
-              {prev ? <NavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/> : <div style={{flex:1}}/>}
-              {next ? <NavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/> : <div style={{flex:1}}/>}
-            </div>
-          )}
 
         </div>
       </div>
