@@ -234,6 +234,15 @@ html.a11y-dark body    { background: #141412; }
 html.a11y-dark #page-content { background: #141412; }
 
 
+/* ── Reports listing page ────────────────────────────────────── */
+.report-card {
+  transition: box-shadow .15s, border-color .15s;
+}
+.report-card-link:hover .report-card {
+  box-shadow: 0 4px 16px rgba(26,58,107,.1) !important;
+  border-color: var(--navy) !important;
+}
+
 /* ── Reader active — locks outer page scroll ─────────────────
    Applied to <html> for the entire lifetime of the reader page.
    Prevents the site footer and any content below the reader from
