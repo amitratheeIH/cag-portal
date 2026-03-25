@@ -72,11 +72,13 @@ export default async function ReportLandingPage({ params }: Props) {
   }
 
   // Build section→AFC map: afcId → [{ pnum, unit_id }]
+  // Include both sections AND chapters (for chapters that have no child sections
+  // but have AFC set directly on them, e.g. a standalone monitoring chapter)
   const sectionAfcMap: Record<string,{ pnum:string; unit_id:string }[]> = {}
   if (structure) {
     const allU = [...(structure.front_matter||[]),...(structure.content_units||[]),...(structure.back_matter||[])]
     for (const u of allU) {
-      if (u.unit_type !== 'section') continue
+      if (u.unit_type !== 'section' && u.unit_type !== 'chapter') continue
       const pnum = (u as ContentUnit & {para_number?:string}).para_number
       if (!pnum) continue
       const afcs = ((u as ContentUnit & {metadata?:{audit_findings_categories?:string[]}}).metadata?.audit_findings_categories)||[]
