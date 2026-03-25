@@ -577,28 +577,6 @@ export default function HomePage() {
 
       </main>
 
-      <style>{`
-        @keyframes shimmer {
-          0%   { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-        /* High contrast */
-        html.a11y-high-contrast { filter: contrast(1.5); }
-        /* Invert */
-        html.a11y-invert { filter: invert(1) hue-rotate(180deg); }
-        html.a11y-invert img { filter: invert(1) hue-rotate(180deg); }
-        /* Dark mode */
-        html.a11y-dark {
-          --ink:    #e8e4dc;
-          --ink2:   #c8c4bc;
-          --ink3:   #908c84;
-          --page:   #1a1a18;
-          --cream:  #141412;
-          --rule:   #302e28;
-          --rule-lt:#28261f;
-        }
-        html.a11y-dark body { background: #141412; }
-      `}</style>
     </>
   )
 }

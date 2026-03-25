@@ -14,8 +14,11 @@ export default function A11yBar() {
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const sizes = [14, 16, 19, 22]
-    document.documentElement.style.fontSize = sizes[textSize + 1] + 'px'
+    // Use CSS classes that apply zoom to #page-content so px-based
+    // inline styles in the reader also scale correctly.
+    const cl = document.documentElement.classList
+    cl.remove('text-size--1', 'text-size-1', 'text-size-2')
+    if (textSize !== 0) cl.add(`text-size-${textSize}`)
   }, [textSize])
 
   useEffect(() => {
