@@ -509,19 +509,30 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           )}
         </div>
 
-        {/* Row 3: Prev/Next footer — flexShrink:0, always visible at bottom */}
+        {/* Row 3: Prev/Next footer — flexShrink:0, always visible at bottom.
+            Styled to visually continue the paper: same max-width, centred,
+            white background with the paper's side borders.                  */}
         <div style={{
-          flexShrink:0, display:'flex', gap:'8px', padding:'8px 10px',
-          borderTop:'1px solid #d4d0ca', background:'#f9f8f6',
+          flexShrink:0, background:'#edeae4',
+          borderTop:'1px solid #d4d0ca',
         }}>
-          {hasPrev
-            ? <NavBtn unit={chapters[chapterIdx-1]} dir="prev" onClick={()=>goTo(chapterIdx-1)}/>
-            : <div style={{flex:1}}/>
-          }
-          {hasNext
-            ? <NavBtn unit={chapters[chapterIdx+1]} dir="next" onClick={()=>goTo(chapterIdx+1)}/>
-            : <div style={{flex:1}}/>
-          }
+          <div style={{
+            maxWidth: readerMode ? '900px' : '800px',
+            margin:'0 auto',
+            background:'#fff',
+            borderLeft:'1px solid #d8d4ce',
+            borderRight:'1px solid #d8d4ce',
+            display:'flex', gap:'8px', padding:'12px 20px',
+          }}>
+            {hasPrev
+              ? <NavBtn unit={chapters[chapterIdx-1]} dir="prev" onClick={()=>goTo(chapterIdx-1)}/>
+              : <div style={{flex:1}}/>
+            }
+            {hasNext
+              ? <NavBtn unit={chapters[chapterIdx+1]} dir="next" onClick={()=>goTo(chapterIdx+1)}/>
+              : <div style={{flex:1}}/>
+            }
+          </div>
         </div>
 
       </div>
