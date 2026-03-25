@@ -223,15 +223,29 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     if (window.innerWidth < 768) setTocOpen(false)
   }, [chapters, chapterIdx, productId, scrollToSection, lockSpy])
 
-  // Fire after blockVersion increments (the LAST state change after a chapter switch —
-  // fn/ref indexes built → setBlockVersion → blocks re-render in-place).
-  // Scroll any pending section now that the DOM is final and stable.
+  // Fire pending section scroll after a chapter switch.
+  // Uses polling (up to 2s) to wait for the section element to appear
+  // in the DOM — blockVersion is not reliable enough because it only
+  // increments when fn/ref indexes change, which may race with render.
   useEffect(() => {
     const pending = pendingSectionRef.current
     if (!pending) return
     pendingSectionRef.current = null
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollToSection(pending)))
-  }, [blockVersion, scrollToSection])
+
+    let attempts = 0
+    const MAX = 20   // 20 × 100ms = 2 seconds max
+    const poll = () => {
+      const el = document.getElementById('sec-' + pending)
+      if (el) {
+        scrollToSection(pending)
+      } else if (++attempts < MAX) {
+        setTimeout(poll, 100)
+      }
+      // If element never appears, silently give up (e.g. section has no anchor)
+    }
+    // First attempt after two animation frames (React render + paint)
+    requestAnimationFrame(() => requestAnimationFrame(poll))
+  }, [chapterIdx, scrollToSection])   // fires every time chapter changes
 
   // Wire global nav callback so inline ref links can navigate chapters
   useEffect(() => {

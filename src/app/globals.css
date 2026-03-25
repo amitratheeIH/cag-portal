@@ -272,6 +272,11 @@ html.reader-fullscreen #site-footer {
 }
 html.reader-fullscreen #page-content {
   margin-top: 0 !important;
+  /* Must also be 100dvh — otherwise reader-root (which is 100dvh)
+     overflows the clipped #page-content and the bottom 96px is cut off,
+     making the reader nav bar disappear and creating a large empty area */
+  height: 100dvh !important;
+  height: 100vh !important;
   transition: margin-top .25s ease;
 }
 /* Remove large footer margin globally — slim footer doesn't need it */
