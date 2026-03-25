@@ -503,36 +503,11 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
               key={current.unit_id}
               unit={current} sections={sections} flatUnits={flatUnits}
               unitFiles={initialData.unitFiles} blocks={initialData.blocks}
+              prev={chapters[chapterIdx-1]} next={chapters[chapterIdx+1]}
               onNavigate={goTo} chapterIdx={chapterIdx} readerMode={readerMode}
               blockVersion={blockVersion}
             />
           )}
-        </div>
-
-        {/* Row 3: Prev/Next footer — flexShrink:0, always visible at bottom.
-            Styled to visually continue the paper: same max-width, centred,
-            white background with the paper's side borders.                  */}
-        <div style={{
-          flexShrink:0, background:'#edeae4',
-          borderTop:'1px solid #d4d0ca',
-        }}>
-          <div style={{
-            maxWidth: readerMode ? '900px' : '800px',
-            margin:'0 auto',
-            background:'#fff',
-            borderLeft:'1px solid #d8d4ce',
-            borderRight:'1px solid #d8d4ce',
-            display:'flex', gap:'8px', padding:'12px 20px',
-          }}>
-            {hasPrev
-              ? <NavBtn unit={chapters[chapterIdx-1]} dir="prev" onClick={()=>goTo(chapterIdx-1)}/>
-              : <div style={{flex:1}}/>
-            }
-            {hasNext
-              ? <NavBtn unit={chapters[chapterIdx+1]} dir="next" onClick={()=>goTo(chapterIdx+1)}/>
-              : <div style={{flex:1}}/>
-            }
-          </div>
         </div>
 
       </div>
@@ -541,9 +516,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, onNavigate, chapterIdx, readerMode, blockVersion }: {
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion }: {
   unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
+  prev?: FlatUnit; next?: FlatUnit
   onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean; blockVersion?: number
 }) {
   const uid    = unit.unit_id
@@ -630,6 +606,14 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, onNavigate,
           ))}
 
           {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
+
+          {/* Prev/Next — at the end of the chapter content, inside the paper */}
+          {(prev || next) && (
+            <div style={{marginTop:'48px',paddingTop:'20px',borderTop:'1px solid #e4e0d8',display:'flex',gap:'10px'}}>
+              {prev ? <NavBtn unit={prev} dir="prev" onClick={()=>onNavigate(chapterIdx-1)}/> : <div style={{flex:1}}/>}
+              {next ? <NavBtn unit={next} dir="next" onClick={()=>onNavigate(chapterIdx+1)}/> : <div style={{flex:1}}/>}
+            </div>
+          )}
 
         </div>
       </div>
