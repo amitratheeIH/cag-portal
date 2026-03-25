@@ -4,8 +4,6 @@
 import React, { useState } from 'react'
 import { afcLabel } from '@/lib/taxonomy-labels'
 
-import React, { useState } from 'react'
-
 // ── Topics taxonomy: sub_topic → { parentId, parentLabel, subLabel } ─
 const TOPICS_MAP: Record<string,{ parentId:string; parentLabel:string; subLabel:string }> = {
   // Labour & Social Welfare
