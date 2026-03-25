@@ -121,7 +121,8 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     }
   }
   const [isMobile, setIsMobile] = useState(false)
-  const [tocOpen, setTocOpen] = useState(true)
+  // Lazy init: start closed on mobile so TOC never flashes open on load
+  const [tocOpen, setTocOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : true)
 
   useEffect(() => {
     const check = () => {
@@ -401,12 +402,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       {/* ── Main ────────────────────────────────── */}
       <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
 
-        {/* ── Nav bar ──────────────────────────────────────────── */}
+        {/* ── Nav bar — z-index 45 keeps it above the mobile backdrop (40) ── */}
         <div style={{
           height:'44px', flexShrink:0, display:'flex', alignItems:'center',
           justifyContent:'space-between', padding:'0 10px',
           borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
-          zIndex:10, position:'relative', gap:'6px',
+          zIndex:45, position:'relative', gap:'6px',
         }}>
 
           {/* Left: TOC toggle + chapter title */}
