@@ -115,16 +115,19 @@ html { scroll-behavior: smooth; }
 @media (max-width: 767px) {
   .toc-open {
     position: fixed !important;
-    top: 64px; bottom: 0; left: 0;
+    top: 108px; /* 64px site header + 44px reader nav bar — TOC starts BELOW the nav bar */
+    bottom: 0; left: 0;
     width: min(85vw, 320px) !important;
     z-index: 50;
     box-shadow: 4px 0 20px rgba(0,0,0,.18);
   }
   .toc-closed {
     position: fixed !important;
-    top: 64px; bottom: 0; left: 0;
+    top: 108px;
+    bottom: 0; left: 0;
     width: 0 !important;
     z-index: 50;
+    overflow: hidden;
   }
 }
 

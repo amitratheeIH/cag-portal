@@ -304,6 +304,15 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('keydown', h)
   }, [chapterIdx, goTo, readerMode])
 
+  // Lock body scroll on mobile — prevents scrollIntoView from scrolling the
+  // body instead of the content pane, which would pull the nav bar off-screen.
+  useEffect(() => {
+    if (!isMobile) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [isMobile])
+
   // Clean up on unmount
   useEffect(() => {
     return () => { document.documentElement.classList.remove('reader-fullscreen') }
@@ -402,13 +411,22 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       {/* ── Main ────────────────────────────────── */}
       <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
 
-        {/* ── Nav bar — z-index 45 keeps it above the mobile backdrop (40) ── */}
+        {/* ── Nav bar ─────────────────────────────────────────────────────────
+             On mobile: position fixed so it is ALWAYS visible — cannot be
+             covered by the TOC overlay (zIndex:50) or scrolled away by the
+             browser. zIndex:55 sits above everything.
+             On desktop: position relative, stays in normal flex flow.        */}
         <div style={{
           height:'44px', flexShrink:0, display:'flex', alignItems:'center',
           justifyContent:'space-between', padding:'0 10px',
           borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
-          zIndex:45, position:'relative', gap:'6px',
-        }}>
+          zIndex: 55,
+          position: isMobile ? 'fixed' : 'relative',
+          top:   isMobile ? '64px' : 'auto',
+          left:  isMobile ? 0      : 'auto',
+          right: isMobile ? 0      : 'auto',
+          gap:'6px',
+        } as React.CSSProperties}>
 
           {/* Left: TOC toggle + chapter title */}
           <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
@@ -476,8 +494,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
           </div>
         </div>
 
-        {/* Content — the single scroll pane */}
-        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain'}}>
+        {/* Content — the single scroll pane.
+            On mobile: paddingTop:44px offsets the fixed nav bar so content
+            starts below it, not hidden behind it.                           */}
+        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain', paddingTop: isMobile ? '44px' : 0}}>
           {current && (
             <ChapterPage
               key={current.unit_id}
