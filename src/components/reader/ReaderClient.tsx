@@ -185,7 +185,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       const elRect = el.getBoundingClientRect()
       const cRect  = c.getBoundingClientRect()
       const relPos  = elRect.top - cRect.top        // pixels from top of visible area
-      const nudge   = c.clientHeight * 0.5         // target: centre of screen
+      const nudge   = c.clientHeight * 0.25         // target: centre of screen
       c.scrollTo({ top: c.scrollTop + relPos - nudge, behavior: 'smooth' })
     }
     doScroll()
@@ -560,7 +560,7 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
     const scrollToEl = () => {
       const elRect = el.getBoundingClientRect()
       const cRect  = c.getBoundingClientRect()
-      c.scrollTo({ top: Math.max(0, c.scrollTop + (elRect.top - cRect.top) - c.clientHeight * 0.5), behavior: 'smooth' })
+      c.scrollTo({ top: Math.max(0, c.scrollTop + (elRect.top - cRect.top) - c.clientHeight * 0.25), behavior: 'smooth' })
     }
 
     scrollToEl()
