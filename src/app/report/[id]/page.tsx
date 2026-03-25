@@ -1,9 +1,10 @@
 import { getDb } from '@/lib/mongodb'
-import { fetchJson } from '@/lib/github'
+import { fetchJson, fetchNdjson } from '@/lib/github'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReportStructure, ContentUnit } from '@/types'
+import AfcSection from '@/components/report/AfcSection'
 
 interface Props {
   params: { id: string }
@@ -42,12 +43,52 @@ export default async function ReportLandingPage({ params }: Props) {
   const meta = await db.collection('report_meta').findOne({ product_id: params.id })
   const folderPath = meta?.folder_path as string | undefined
 
+  // ── Extract state/UT name from full metadata ───────────────
+  const fullMeta   = meta?.metadata as Record<string, unknown> | undefined
+  const reportLevel = (fullMeta?.specific as Record<string, unknown>)?.report_level as Record<string, unknown> | undefined
+  const stateUtObj  = reportLevel?.state_ut as { id?: string; name?: Record<string,string> } | undefined
+  const stateUtName = stateUtObj ? ml(stateUtObj.name) : undefined
+
   // ── Fetch structure from GitHub to list chapters ───────────
   let structure: ReportStructure | null = null
   if (folderPath) {
     try {
       structure = await fetchJson<ReportStructure>(`${folderPath}/structure.json`)
     } catch { /* structure optional for landing page */ }
+  }
+
+  // ── Fetch all recommendations from block files ────────────
+  interface Rec { block_id: string; text: string; para_number?: string }
+  const recommendations: Rec[] = []
+  if (folderPath && structure) {
+    const allUnitsForRec = [
+      ...(structure.front_matter || []),
+      ...(structure.content_units || []),
+      ...(structure.back_matter || []),
+    ]
+    const childSetRec = new Set(allUnitsForRec.flatMap(u => u.children || []))
+    const topUnitsRec = allUnitsForRec.filter(u => !childSetRec.has(u.unit_id))
+    await Promise.allSettled(
+      topUnitsRec.map(async (ch) => {
+        try {
+          const blocks = await fetchNdjson<{
+            block_id: string; block_type: string; unit_id: string;
+            para_number?: string; content: { text?: Record<string,string> }
+          }>(`${folderPath}/blocks/content_block_${ch.unit_id}.ndjson`)
+          blocks
+            .filter(b => b.block_type === 'recommendation')
+            .forEach(b => {
+              recommendations.push({
+                block_id:    b.block_id,
+                text:        ml(b.content.text),
+                para_number: b.para_number,
+              })
+            })
+        } catch { /* silent */ }
+      })
+    )
+    // Sort by block_id to get stable order
+    recommendations.sort((a, b) => a.block_id.localeCompare(b.block_id))
   }
 
   // ── Extract metadata fields ────────────────────────────────
@@ -116,6 +157,7 @@ export default async function ReportLandingPage({ params }: Props) {
             {jurisdiction && (
               <span style={{ fontFamily: 'system-ui', fontSize: '10.5px', fontWeight: 700, background: 'rgba(255,255,255,.15)', color: '#fff', padding: '3px 10px', borderRadius: '12px' }}>
                 {jurLabel[jurisdiction] || jurisdiction}
+                {stateUtName ? ` · ${stateUtName}` : ''}
               </span>
             )}
             {auditType && (
@@ -193,25 +235,9 @@ export default async function ReportLandingPage({ params }: Props) {
             </section>
           )}
 
-          {/* Audit Findings */}
+          {/* Audit Findings — hierarchical, collapsible */}
           {afcCats.length > 0 && (
-            <section style={{ background: '#fff', border: '1px solid var(--rule)', borderRadius: '10px', padding: '22px 24px', marginBottom: '20px' }}>
-              <h2 style={{ fontFamily: 'system-ui', fontSize: '11px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--ink3)', margin: '0 0 14px' }}>
-                Audit Finding Categories
-              </h2>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {afcCats.map(cat => (
-                  <span key={cat} style={{
-                    fontFamily: 'system-ui', fontSize: '11.5px', fontWeight: 600,
-                    background: 'var(--navy-lt)', color: 'var(--navy)',
-                    padding: '4px 12px', borderRadius: '12px',
-                    border: '1px solid rgba(26,58,107,.15)',
-                  }}>
-                    {cat.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())}
-                  </span>
-                ))}
-              </div>
-            </section>
+            <AfcSection afcCats={afcCats}/>
           )}
 
           {/* Topics */}
@@ -234,6 +260,50 @@ export default async function ReportLandingPage({ params }: Props) {
               </div>
             </section>
           )}
+
+          {/* Recommendations */}
+          {recommendations.length > 0 && (
+            <section style={{ background: '#fff', border: '1px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', marginBottom: '20px' }}>
+              <div style={{ background: 'var(--green-lt)', borderBottom: '1px solid var(--rule)', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="14" height="14" fill="none" stroke="#fff" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </div>
+                <h2 style={{ fontFamily: 'system-ui', fontSize: '13px', fontWeight: 700, color: 'var(--green)', margin: 0 }}>
+                  Recommendations
+                  <span style={{ fontFamily: 'system-ui', fontSize: '11px', fontWeight: 600, color: 'var(--ink3)', marginLeft: '8px' }}>
+                    ({recommendations.length})
+                  </span>
+                </h2>
+              </div>
+              <ol style={{ margin: 0, padding: '8px 0', listStyle: 'none' }}>
+                {recommendations.map((rec, i) => (
+                  <li key={rec.block_id} style={{
+                    padding: '14px 24px',
+                    borderBottom: i < recommendations.length - 1 ? '1px solid var(--rule-lt)' : 'none',
+                    display: 'flex', gap: '14px', alignItems: 'flex-start',
+                  }}>
+                    <span style={{
+                      flexShrink: 0, width: '24px', height: '24px',
+                      borderRadius: '50%', background: 'var(--green)',
+                      color: '#fff', fontFamily: 'system-ui', fontSize: '11px',
+                      fontWeight: 700, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', marginTop: '1px',
+                    }}>{i + 1}</span>
+                    <p style={{
+                      fontFamily: '"EB Garamond","Times New Roman",serif',
+                      fontSize: '15.5px', lineHeight: 1.65,
+                      color: 'var(--ink)', margin: 0, textAlign: 'justify',
+                    }}>
+                      {/* Strip "Recommendation N:" prefix if present */}
+                      {rec.text.replace(/^Recommendation\s+\d+:\s*/i, '')}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
         </div>
 
         {/* ── Right: Report details card ──────────────────── */}
@@ -248,6 +318,7 @@ export default async function ReportLandingPage({ params }: Props) {
               {[
                 { label: 'Year',           value: year?.toString() },
                 { label: 'Jurisdiction',   value: jurisdiction ? jurLabel[jurisdiction] || jurisdiction : undefined },
+                { label: 'State / UT',     value: stateUtName || undefined },
                 { label: 'Audit Type',     value: auditType ? auditTypeLabel[auditType] || auditType : undefined },
                 { label: 'Audit Period',   value: auditPeriod ? `${auditPeriod.start_year} – ${auditPeriod.end_year}` : undefined },
                 { label: 'Tabled',         value: tablingDates?.lower_house },
