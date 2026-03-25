@@ -1,13 +1,14 @@
-// CAG Portal v2025-03-21
+// CAG Portal — root layout with accessibility bar
 import type { Metadata } from 'next'
 import './globals.css'
+import A11yBar from '@/components/home/A11yBar'
 
 export const metadata: Metadata = {
   title: {
-    default: 'CAG Audit Reports Portal',
-    template: '%s | CAG Portal',
+    default: 'CAG Digital Repository',
+    template: '%s | CAG Digital Repository',
   },
-  description: 'Audit Reports of the Comptroller and Auditor General of India',
+  description: 'Digital Repository of Audit Reports — Comptroller and Auditor General of India',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -16,64 +17,110 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <a href="#main-content" className="skip-nav">Skip to main content</a>
 
-        {/* ── Site Header ─────────────────────────────────── */}
+        {/* ── Combined header: accessibility bar + site header ──────────────
+            Wrapped in a single <header role="banner"> so the ReaderClient's
+            ResizeObserver captures the combined height in --site-header-h.   */}
         <header
-          className="fixed top-0 left-0 right-0 z-50 h-16 flex items-center gap-3 px-5"
-          style={{ background: 'var(--navy)', boxShadow: '0 2px 8px rgba(0,0,0,.25)' }}
           role="banner"
+          className="fixed top-0 left-0 right-0 z-50"
+          style={{ boxShadow: '0 2px 12px rgba(0,0,0,.3)' }}
         >
-          {/* Emblem */}
-          <div className="flex-shrink-0 w-10 h-10 flex items-center justify-content-center" aria-label="Emblem of India">
-            <span className="text-2xl" aria-hidden="true">🇮🇳</span>
-          </div>
-
-          <div className="w-px h-8 flex-shrink-0 bg-white/20" aria-hidden="true" />
-
-          {/* Identity */}
-          <div className="flex-1 min-w-0">
-            <div className="text-white/60 text-[10px] font-bold tracking-[1.2px] uppercase leading-none">
-              Comptroller and Auditor General of India
-            </div>
-            <a
-              href="/"
-              className="block text-white font-serif font-semibold text-[13px] mt-1 leading-tight
-                         hover:text-white/90 transition-colors"
-            >
-              Audit Reports Portal
-            </a>
-          </div>
-
-          {/* Nav links */}
-          <nav aria-label="Site navigation" className="hidden md:flex items-center gap-1">
-            <a href="/" className="text-white/80 hover:text-white text-sm px-3 py-1.5 rounded-md hover:bg-white/10 transition-colors">
-              Reports
-            </a>
-            <a href="/search" className="text-white/80 hover:text-white text-sm px-3 py-1.5 rounded-md hover:bg-white/10 transition-colors">
-              Search
-            </a>
-          </nav>
-
-          {/* Search button (mobile) */}
-          <a
-            href="/search"
-            className="flex items-center gap-2 text-white/80 hover:text-white
-                       bg-white/10 hover:bg-white/20 border border-white/20
-                       rounded-full px-3 py-1.5 text-sm transition-colors"
-            aria-label="Search"
+          {/* ── Row 1: Accessibility bar ───────────────────────────────── */}
+          <div
+            id="a11y-bar"
+            style={{
+              background: '#0f2240',
+              borderBottom: '1px solid rgba(255,255,255,.1)',
+              padding: '0 20px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '4px',
+            }}
           >
-            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-            <span className="hidden sm:inline">Search</span>
-          </a>
+            {/* Accessibility controls — rendered on every page */}
+            <A11yBar />
+          </div>
+
+          {/* ── Row 2: Main site header ─────────────────────────────────── */}
+          <div
+            style={{
+              background: 'var(--navy)',
+              height: '64px',
+              padding: '0 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '14px',
+            }}
+          >
+            {/* Emblem */}
+            <div style={{ flexShrink: 0, width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              aria-label="Emblem of India">
+              <span style={{ fontSize: '28px' }} aria-hidden="true">🏛️</span>
+            </div>
+
+            <div style={{ width: '1px', height: '32px', background: 'rgba(255,255,255,.2)', flexShrink: 0 }} aria-hidden="true"/>
+
+            {/* Identity */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: 'rgba(255,255,255,.55)', fontSize: '9.5px', fontFamily: 'system-ui', fontWeight: 700, letterSpacing: '1.4px', textTransform: 'uppercase', lineHeight: 1 }}>
+                Comptroller and Auditor General of India
+              </div>
+              <a
+                href="/"
+                style={{
+                  display: 'block',
+                  color: '#fff',
+                  fontFamily: '"EB Garamond", "Times New Roman", serif',
+                  fontWeight: 600,
+                  fontSize: '17px',
+                  marginTop: '4px',
+                  lineHeight: 1.2,
+                  textDecoration: 'none',
+                  letterSpacing: '.2px',
+                }}
+                className="hover:text-white/90 transition-colors"
+              >
+                Digital Repository of Audit Reports
+              </a>
+            </div>
+
+            {/* Nav */}
+            <nav aria-label="Site navigation" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <a href="/" style={{ color: 'rgba(255,255,255,.8)', fontSize: '13px', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontFamily: 'system-ui' }}
+                className="hover:text-white hover:bg-white/10 transition-colors">
+                Home
+              </a>
+              <a href="/reports" style={{ color: 'rgba(255,255,255,.8)', fontSize: '13px', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontFamily: 'system-ui' }}
+                className="hover:text-white hover:bg-white/10 transition-colors">
+                Reports
+              </a>
+              <a href="/search"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  color: 'rgba(255,255,255,.8)', fontSize: '13px',
+                  padding: '6px 14px', borderRadius: '20px',
+                  border: '1px solid rgba(255,255,255,.25)',
+                  textDecoration: 'none', fontFamily: 'system-ui',
+                }}
+                className="hover:text-white hover:bg-white/10 hover:border-white/40 transition-all"
+                aria-label="Search">
+                <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                <span className="hidden sm:inline">Search</span>
+              </a>
+            </nav>
+          </div>
         </header>
 
-        {/* ── Page content ────────────────────────────────── */}
-        <div className="mt-16" id="page-content">
+        {/* ── Page content — offset by combined header height (96px = 32 + 64) */}
+        <div style={{ marginTop: '96px' }} id="page-content">
           {children}
         </div>
 
-        {/* ── Footer ──────────────────────────────────────── */}
+        {/* ── Footer ───────────────────────────────────────────────────── */}
         <footer
           id="site-footer"
           role="contentinfo"
@@ -88,10 +135,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             flexWrap: 'wrap',
           }}
         >
-          <span style={{fontFamily:'system-ui',fontSize:'11px',color:'rgba(255,255,255,0.7)',fontWeight:500}}>
-            CAG Audit Reports Portal &nbsp;·&nbsp; Comptroller and Auditor General of India
+          <span style={{ fontFamily: 'system-ui', fontSize: '11px', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+            CAG Digital Repository &nbsp;·&nbsp; Comptroller and Auditor General of India
           </span>
-          <span style={{fontFamily:'system-ui',fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>
+          <span style={{ fontFamily: 'system-ui', fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>
             GIGW 3.0 Compliant
           </span>
         </footer>

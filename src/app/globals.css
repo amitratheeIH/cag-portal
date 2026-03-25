@@ -119,7 +119,7 @@ html { scroll-behavior: smooth; }
                     Named so it's changed in one place if the
                     bar is ever resized.                         */
 :root {
-  --site-header-h:      64px;  /* measured live by ResizeObserver — default is fallback only */
+  --site-header-h:      96px;  /* 32px a11y bar + 64px main header — measured live by ResizeObserver */
   --reader-nav-h:       44px;  /* height of the reader's own nav bar */
   --reader-scroll-margin: 56px; /* scrollMarginTop on sections + IntersectionObserver top margin.
                                    Slightly larger than --reader-nav-h to give a comfortable
