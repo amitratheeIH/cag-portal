@@ -304,6 +304,24 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
     return () => window.removeEventListener('keydown', h)
   }, [chapterIdx, goTo, readerMode])
 
+  // Measure the site header height and keep --site-header-h CSS variable
+  // current. ResizeObserver fires immediately on mount and whenever the
+  // header resizes (including when reader mode hides it → height becomes 0).
+  // All fixed positioning in the reader uses var(--site-header-h) so nothing
+  // needs to know the pixel value explicitly.
+  useEffect(() => {
+    const header = document.querySelector('header[role="banner"]') as HTMLElement | null
+    if (!header) return
+    const update = () => {
+      const h = header.getBoundingClientRect().height
+      document.documentElement.style.setProperty('--site-header-h', `${h}px`)
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(header)
+    return () => ro.disconnect()
+  }, [])
+
   // Lock body scroll on mobile — prevents scrollIntoView from scrolling the
   // body instead of the content pane, which would pull the nav bar off-screen.
   useEffect(() => {
@@ -332,6 +350,11 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
       return
     }
     const root = contentRef.current
+    // Read the scroll margin from the CSS variable so it stays in sync
+    // with --reader-scroll-margin without any hardcoded pixel here.
+    const scrollMargin = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--reader-scroll-margin')
+    ) || 56
     const visible = new Map<string, number>()
     const observer = new IntersectionObserver(
       (entries) => {
@@ -349,7 +372,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         const topmost = Array.from(visible.entries()).sort((a, b) => a[1] - b[1])[0]
         if (topmost) setActiveSectionId(topmost[0])
       },
-      { root, rootMargin: '-56px 0px -60% 0px', threshold: 0 }
+      { root, rootMargin: `-${scrollMargin}px 0px -60% 0px`, threshold: 0 }
     )
     sections.forEach(sec => {
       const el = root.querySelector(`[data-sec-id="${sec.unit_id}"]`)
@@ -374,7 +397,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
   )
 
   return (
-    <div style={{display:'flex', height: readerMode ? '100vh' : 'calc(100vh - 64px)', minHeight:'-webkit-fill-available', overflow:'hidden', transition:'height .25s ease'}} className="reader-root">
+    <div style={{display:'flex', height: readerMode ? '100vh' : 'calc(100vh - var(--site-header-h))', minHeight:'-webkit-fill-available', overflow:'hidden', transition:'height .25s ease'}} className="reader-root">
 
       {/* ── TOC ─────────────────────────────────── */}
       {/* Overlay backdrop on mobile when TOC is open */}
@@ -417,12 +440,12 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
              browser. zIndex:55 sits above everything.
              On desktop: position relative, stays in normal flex flow.        */}
         <div style={{
-          height:'44px', flexShrink:0, display:'flex', alignItems:'center',
+          height:'var(--reader-nav-h)', flexShrink:0, display:'flex', alignItems:'center',
           justifyContent:'space-between', padding:'0 10px',
           borderBottom:'1px solid #d4d0ca', background:'#f9f8f6',
           zIndex: 55,
           position: isMobile ? 'fixed' : 'relative',
-          top:   isMobile ? '64px' : 'auto',
+          top:   isMobile ? 'var(--site-header-h)' : 'auto',
           left:  isMobile ? 0      : 'auto',
           right: isMobile ? 0      : 'auto',
           gap:'6px',
@@ -495,9 +518,10 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
         </div>
 
         {/* Content — the single scroll pane.
-            On mobile: paddingTop:44px offsets the fixed nav bar so content
-            starts below it, not hidden behind it.                           */}
-        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain', paddingTop: isMobile ? '44px' : 0}}>
+            On mobile: paddingTop offsets the fixed nav bar so content
+            starts below it. In reader mode the site header is gone so
+            the nav bar sits at top:0 — only var(--reader-nav-h) offset needed. */}
+        <div ref={contentRef} style={{flex:'1 1 0',overflowY:'auto',background:'#edeae4',minHeight:0,overscrollBehavior:'contain', paddingTop: isMobile ? 'var(--reader-nav-h)' : 0}}>
           {current && (
             <ChapterPage
               key={current.unit_id}
@@ -644,7 +668,7 @@ function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1, blockVers
   const topMargin = depth === 1 ? '40px' : '28px'
 
   return (
-    <div id={`sec-${uid}`} data-sec-id={uid} style={{marginTop:topMargin, scrollMarginTop:'56px'}}>
+    <div id={`sec-${uid}`} data-sec-id={uid} style={{marginTop:topMargin}}>
       {(secNum || title) && (
         <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginBottom:'12px',paddingBottom:'8px',borderBottom:borderStyle}}>
           {secNum && (
@@ -693,7 +717,7 @@ function FnList({ footnotes }: { footnotes: Fn[] }) {
         const text = typeof fn.text==='string'?fn.text:(fn.text as Record<string,string>)?.en||Object.values(fn.text||{})[0] as string||''
         const fnId = `fn-${fn.footnote_id||fn.marker}`
         return (
-          <div key={i} id={fnId} style={{display:'flex',gap:'10px',marginBottom:'8px',lineHeight:1.65,scrollMarginTop:'30px'}}>
+          <div key={i} id={fnId} style={{display:'flex',gap:'10px',marginBottom:'8px',lineHeight:1.65}}>
             <a
                onClick={e=>{e.preventDefault();const el=document.getElementById(`fnref-${fn.footnote_id||fn.marker}`);if(el)el.scrollIntoView({behavior:'smooth',block:'center'});}}
                style={{color:'#8b1a1a',fontWeight:700,flexShrink:0,fontFamily:'system-ui',fontSize:'13px',marginTop:'1px',textDecoration:'none',minWidth:'18px',cursor:'pointer'}}>

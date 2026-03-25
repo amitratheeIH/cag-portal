@@ -98,12 +98,42 @@
 /* Smooth scroll everywhere */
 html { scroll-behavior: smooth; }
 
+/* ── Section scroll-margin — driven by CSS var so it tracks nav bar height ─ */
+/* Applies to every section anchor in the reader content pane.
+   This is what creates the breathing gap between the nav bar and the
+   section heading when the user clicks a TOC item.                         */
+[data-sec-id] {
+  scroll-margin-top: var(--reader-scroll-margin);
+}
+
+/* Footnote anchors — smaller gap is fine since they don't need to clear the nav */
+[id^="fn-"] {
+  scroll-margin-top: 30px;
+}
+
+/* ── Reader layout CSS variables ─────────────────────────────
+   --site-header-h  measured and set live by ReaderClient via
+                    ResizeObserver on the site <header> element.
+                    Defaults to 64px in case JS hasn't run yet.
+   --reader-nav-h   Height of the reader's own nav bar.
+                    Named so it's changed in one place if the
+                    bar is ever resized.                         */
+:root {
+  --site-header-h:      64px;  /* measured live by ResizeObserver — default is fallback only */
+  --reader-nav-h:       44px;  /* height of the reader's own nav bar */
+  --reader-scroll-margin: 56px; /* scrollMarginTop on sections + IntersectionObserver top margin.
+                                   Slightly larger than --reader-nav-h to give a comfortable
+                                   breathing gap when a section snaps into view.
+                                   If you change --reader-nav-h, update this too. */
+}
+
 /* ── Reader layout — prevent nav bar scroll-away ────────── */
 .reader-root {
   /* Use dynamic viewport height on mobile to account for
-     browser chrome (address bar) showing/hiding */
-  height: calc(100vh - 64px);
-  height: calc(100dvh - 64px);
+     browser chrome (address bar) showing/hiding.
+     var(--site-header-h) is kept current by ResizeObserver. */
+  height: calc(100vh  - var(--site-header-h));
+  height: calc(100dvh - var(--site-header-h));
 }
 
 /* ── Reader TOC sidebar ──────────────────────────────────── */
@@ -111,11 +141,14 @@ html { scroll-behavior: smooth; }
 .toc-open  { width: 268px; transition: width .2s ease; }
 .toc-closed { width: 0;    transition: width .2s ease; }
 
-/* Mobile: fixed overlay — does NOT push content */
+/* Mobile: fixed overlay — does NOT push content.
+   Top = site header height + reader nav bar height.
+   Both values are CSS variables so they auto-update
+   when the header collapses (reader mode) or is resized. */
 @media (max-width: 767px) {
   .toc-open {
     position: fixed !important;
-    top: 108px; /* 64px site header + 44px reader nav bar — TOC starts BELOW the nav bar */
+    top: calc(var(--site-header-h) + var(--reader-nav-h));
     bottom: 0; left: 0;
     width: min(85vw, 320px) !important;
     z-index: 50;
@@ -123,7 +156,7 @@ html { scroll-behavior: smooth; }
   }
   .toc-closed {
     position: fixed !important;
-    top: 108px;
+    top: calc(var(--site-header-h) + var(--reader-nav-h));
     bottom: 0; left: 0;
     width: 0 !important;
     z-index: 50;
@@ -176,9 +209,10 @@ html.reader-fullscreen #page-content {
 }
 /* Remove large footer margin globally — slim footer doesn't need it */
 #page-content + #site-footer { margin-top: 0; }
-/* Reader pane fills full viewport height */
+/* Reader pane fills full viewport height in reader mode */
 html.reader-fullscreen .reader-root {
-  height: 100vh !important;
+  height: 100dvh !important;
+  height: 100vh !important; /* fallback for browsers without dvh support */
 }
 /* Smooth transition back */
 header[role="banner"] {
