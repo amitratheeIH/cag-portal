@@ -3,6 +3,7 @@ import { fetchJson, fetchNdjson } from '@/lib/github'
 import { ml, type ReportStructure, type ContentUnit, type ContentBlock } from '@/types'
 import { notFound } from 'next/navigation'
 import { ReaderClient } from '@/components/reader/ReaderClient'
+import { getAfcLabels } from '@/lib/taxonomy-labels'
 import type { Metadata } from 'next'
 
 interface Props {
@@ -105,6 +106,7 @@ export default async function ReportPage({ params, searchParams }: Props) {
       }}
       unitIdFromUrl={searchParams.unit}
       folderPath={folderPath}
+      afcLabels={getAfcLabels()}
     />
   )
 }

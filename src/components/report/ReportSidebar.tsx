@@ -1,85 +1,8 @@
 'use client'
 
-// ReportSidebar.tsx
+// ReportSidebar.tsx — receives pre-built taxonomy maps as props from server component.
+// No hardcoded label maps. No fs reads. Works for any report automatically.
 import React, { useState } from 'react'
-import { afcLabel } from '@/lib/taxonomy-labels'
-
-// ── Topics taxonomy: sub_topic → { parentId, parentLabel, subLabel } ─
-const TOPICS_MAP: Record<string,{ parentId:string; parentLabel:string; subLabel:string }> = {
-  // Labour & Social Welfare
-  construction_workers:       { parentId:'labour_welfare', parentLabel:'Labour & Social Welfare', subLabel:'Building & Construction Worker Welfare' },
-  unorganised_workers:        { parentId:'labour_welfare', parentLabel:'Labour & Social Welfare', subLabel:'Social Security for Unorganised Workers' },
-  labour_standards:           { parentId:'labour_welfare', parentLabel:'Labour & Social Welfare', subLabel:'Labour Standards & Enforcement' },
-  esic:                       { parentId:'labour_welfare', parentLabel:'Labour & Social Welfare', subLabel:'ESIC Health Insurance' },
-  epfo:                       { parentId:'labour_welfare', parentLabel:'Labour & Social Welfare', subLabel:'EPFO Provident Fund' },
-  child_labour:               { parentId:'labour_welfare', parentLabel:'Labour & Social Welfare', subLabel:'Child Labour Elimination' },
-  // Health
-  public_health:              { parentId:'health',         parentLabel:'Health',                  subLabel:'Public Health Services' },
-  health_insurance:           { parentId:'health',         parentLabel:'Health',                  subLabel:'Government Health Insurance' },
-  ayush:                      { parentId:'health',         parentLabel:'Health',                  subLabel:'AYUSH Services' },
-  drug_regulation:            { parentId:'health',         parentLabel:'Health',                  subLabel:'Drug Regulation & Quality' },
-  // Education
-  school_education:           { parentId:'education',      parentLabel:'Education',               subLabel:'School Education' },
-  higher_education:           { parentId:'education',      parentLabel:'Education',               subLabel:'Higher Education' },
-  mid_day_meal:               { parentId:'education',      parentLabel:'Education',               subLabel:'Mid-Day Meal Scheme' },
-  // Agriculture
-  crop_production:            { parentId:'agriculture',    parentLabel:'Agriculture',             subLabel:'Crop Production & Support' },
-  irrigation:                 { parentId:'agriculture',    parentLabel:'Agriculture',             subLabel:'Irrigation Infrastructure' },
-  fertiliser:                 { parentId:'agriculture',    parentLabel:'Agriculture',             subLabel:'Fertiliser Subsidy' },
-  // Urban development
-  smart_cities:               { parentId:'urban',          parentLabel:'Urban Development',       subLabel:'Smart Cities Mission' },
-  urban_housing:              { parentId:'urban',          parentLabel:'Urban Development',       subLabel:'Urban Housing' },
-  swachh_bharat:              { parentId:'urban',          parentLabel:'Urban Development',       subLabel:'Swachh Bharat (Urban)' },
-  // Rural development
-  mgnregs:                    { parentId:'rural',          parentLabel:'Rural Development',       subLabel:'MGNREGS' },
-  pmgsy:                      { parentId:'rural',          parentLabel:'Rural Development',       subLabel:'PMGSY Rural Roads' },
-  rural_housing:              { parentId:'rural',          parentLabel:'Rural Development',       subLabel:'Rural Housing' },
-  // Social welfare
-  women_welfare:              { parentId:'social_welfare', parentLabel:'Social Welfare',          subLabel:'Women & Child Development' },
-  sc_st_welfare:              { parentId:'social_welfare', parentLabel:'Social Welfare',          subLabel:'SC/ST Welfare Schemes' },
-  disability:                 { parentId:'social_welfare', parentLabel:'Social Welfare',          subLabel:'Disability Services' },
-  elderly:                    { parentId:'social_welfare', parentLabel:'Social Welfare',          subLabel:'Elderly Care' },
-  // Environment
-  forest_environment:         { parentId:'environment',    parentLabel:'Environment & Forests',   subLabel:'Forest Management' },
-  pollution_control:          { parentId:'environment',    parentLabel:'Environment & Forests',   subLabel:'Pollution Control' },
-  renewable_energy:           { parentId:'environment',    parentLabel:'Environment & Forests',   subLabel:'Renewable Energy' },
-}
-
-function topicFallback(id: string) {
-  return { parentId: 'other', parentLabel: 'Other Topics', subLabel: id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) }
-}
-
-// ── AFC taxonomy ─────────────────────────────────────────────
-const AFC_MAP: Record<string,{ parentId:string; parentLabel:string; subLabel:string }> = {
-  wasteful_expenditure:              { parentId:'financial',      parentLabel:'Financial Irregularities',           subLabel:'Wasteful Expenditure' },
-  infructuous_expenditure:           { parentId:'financial',      parentLabel:'Financial Irregularities',           subLabel:'Infructuous Expenditure' },
-  avoidable_expenditure:             { parentId:'financial',      parentLabel:'Financial Irregularities',           subLabel:'Avoidable Expenditure' },
-  excess_payment:                    { parentId:'financial',      parentLabel:'Financial Irregularities',           subLabel:'Excess Payment' },
-  irregular_expenditure:             { parentId:'financial',      parentLabel:'Financial Irregularities',           subLabel:'Irregular / Unauthorised Expenditure' },
-  autonomous_excess_admin_expenditure:{ parentId:'enterprises',   parentLabel:'Autonomous Body Failures',          subLabel:'Excessive Administrative Expenditure' },
-  short_levy:                        { parentId:'revenue',        parentLabel:'Revenue & Receipts Failures',        subLabel:'Short Levy / Under-Assessment' },
-  non_collection:                    { parentId:'revenue',        parentLabel:'Revenue & Receipts Failures',        subLabel:'Non-Collection of Government Dues' },
-  noncollection_arrears:             { parentId:'revenue',        parentLabel:'Revenue & Receipts Failures',        subLabel:'Revenue Arrears Not Pursued' },
-  statutory_act_violation:           { parentId:'compliance',     parentLabel:'Regulatory & Statutory Compliance',  subLabel:'Violation of Act Provisions' },
-  gfr_violation:                     { parentId:'compliance',     parentLabel:'Regulatory & Statutory Compliance',  subLabel:'Violation of GFR' },
-  target_coverage_shortfall:         { parentId:'scheme',         parentLabel:'Programme & Scheme Implementation',  subLabel:'Coverage Targets Not Achieved' },
-  target_physical_missed:            { parentId:'scheme',         parentLabel:'Programme & Scheme Implementation',  subLabel:'Physical Targets Not Met' },
-  target_funds_unspent:              { parentId:'scheme',         parentLabel:'Programme & Scheme Implementation',  subLabel:'Funds Lapsed / Not Utilised' },
-  beneficiary_excluded:              { parentId:'scheme',         parentLabel:'Programme & Scheme Implementation',  subLabel:'Eligible Beneficiary Excluded' },
-  effectiveness_objective_not_met:   { parentId:'effectiveness',  parentLabel:'Effectiveness Failures',             subLabel:'Programme Objectives Not Achieved' },
-  effectiveness_beneficiary_satisfaction:{ parentId:'effectiveness', parentLabel:'Effectiveness Failures',          subLabel:'Low Beneficiary Satisfaction' },
-  uc_partial_utilisation:            { parentId:'grants',         parentLabel:'Grants-in-Aid & Loans',              subLabel:'Grants Partially Utilised' },
-  dbt_delay:                         { parentId:'dbt',            parentLabel:'Direct Benefit Transfer Failures',   subLabel:'DBT Payments Significantly Delayed' },
-  data_incomplete:                   { parentId:'data',           parentLabel:'Poor Data Quality',                  subLabel:'Incomplete / Missing Records' },
-  data_inconsistent:                 { parentId:'data',           parentLabel:'Poor Data Quality',                  subLabel:'Inconsistent Data Across Systems' },
-  records_not_maintained:            { parentId:'records',        parentLabel:'Records Management Failures',        subLabel:'Mandatory Registers Not Maintained' },
-  records_not_reconciled:            { parentId:'records',        parentLabel:'Records Management Failures',        subLabel:'Financial Records Not Reconciled' },
-  it_not_integrated:                 { parentId:'it',             parentLabel:'IT & Digital Governance',            subLabel:'Systems Not Integrated' },
-  monitoring_no_inspection:          { parentId:'monitoring',     parentLabel:'Monitoring & Oversight Failure',     subLabel:'No Site Inspection' },
-  monitoring_no_internal_audit:      { parentId:'monitoring',     parentLabel:'Monitoring & Oversight Failure',     subLabel:'Internal Audit Not Conducted' },
-  social_audit_not_conducted:        { parentId:'monitoring',     parentLabel:'Monitoring & Oversight Failure',     subLabel:'Social Audit Not Conducted' },
-  para_recurrence:                   { parentId:'followup',       parentLabel:'Audit Follow-Up & Compliance',       subLabel:'Recurrence of Audit Findings' },
-}
 
 const AFC_COLOURS: Record<string,string> = {
   financial:'#8b1a1a', enterprises:'#8b5a1a', revenue:'#7a3a00',
@@ -233,18 +156,22 @@ function RecommendationsSection({ recs }: { recs:{block_id:string; text:string}[
 }
 
 // ── Main export ───────────────────────────────────────────────
+interface MetaEntry { parentId:string; parentLabel:string; subLabel:string }
+
 interface Props {
-  detailRows:     { label:string; value:string }[]
-  topics:         string[]
-  afcCats:        string[]
-  sectionAfcMap:  Record<string,{ pnum:string; unit_id:string }[]>
+  detailRows:      { label:string; value:string }[]
+  topics:          string[]
+  afcCats:         string[]
+  sectionAfcMap:   Record<string,{ pnum:string; unit_id:string }[]>
   recommendations: { block_id:string; text:string }[]
-  reportId:       string
+  reportId:        string
+  afcMeta:         Record<string, MetaEntry>
+  topicMeta:       Record<string, MetaEntry>
 }
 
-export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcMap, recommendations, reportId }: Props) {
-  const afcGroups  = buildGroups(afcCats, AFC_MAP, id => ({ parentId:'other', parentLabel:'Other Findings', subLabel: afcLabel(id) }))
-  const topicGroups = buildGroups(topics, TOPICS_MAP, topicFallback)
+export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcMap, recommendations, reportId, afcMeta, topicMeta }: Props) {
+  const afcGroups   = buildGroups(afcCats,  afcMeta,   id => ({ parentId:'other', parentLabel:'Other Findings', subLabel: afcLabel(id) }))
+  const topicGroups = buildGroups(topics,   topicMeta, id => ({ parentId:'other', parentLabel:'Other Topics',   subLabel: id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) }))
 
   return (
     <>

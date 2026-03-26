@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReportStructure, ContentUnit } from '@/types'
+import { getAfcMeta, getTopicMeta } from '@/lib/taxonomy-labels'
 import ReportSidebar from '@/components/report/ReportSidebar'
 
 interface Props { params: { id: string } }
@@ -141,7 +142,7 @@ export default async function ReportLandingPage({ params }: Props) {
           <div style={{ fontFamily:'system-ui', fontSize:'10px', fontWeight:700, letterSpacing:'1px', textTransform:'uppercase', color:'rgba(255,255,255,.4)', marginBottom:'12px', display:'flex', gap:'6px', flexWrap:'wrap' }}>
             <Link href="/" style={{ color:'rgba(255,255,255,.4)', textDecoration:'none' }}>Home</Link>
             <span>›</span>
-            <Link href={`/reports?section=audit_reports${jurisdiction?`&jurisdiction=${jurisdiction}`:''}`}
+            <Link href={`/audit-reports${jurisdiction?`?jurisdiction=${jurisdiction}`:''}`}
               style={{ color:'rgba(255,255,255,.4)', textDecoration:'none' }}>
               {jurisdiction ? `${jurLabel[jurisdiction]||jurisdiction} Audit Reports` : 'Reports'}
             </Link>
@@ -339,6 +340,8 @@ export default async function ReportLandingPage({ params }: Props) {
             sectionAfcMap={sectionAfcMap as Record<string,{pnum:string;unit_id:string}[]>}
             recommendations={recommendations}
             reportId={params.id}
+            afcMeta={getAfcMeta()}
+            topicMeta={getTopicMeta()}
           />
         </div>
 

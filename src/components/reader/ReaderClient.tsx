@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ml, buildFlatUnitList, type FlatUnit, type ContentUnit, type ContentBlock, type ReportStructure } from '@/types'
 import { BlockRenderer, setFolderPath, setFnIndex, setInlineFnText, setAnnIndex, setAnnVisible, getAnnVisible, setRefIndex, setNavCallback } from '@/components/blocks/BlockRenderer'
-import { afcLabel } from '@/lib/taxonomy-labels'
 
 // ── Footnote types ────────────────────────────────────────────
 interface Fn {
@@ -88,9 +87,11 @@ interface ReaderData {
 }
 
 // ── Main ──────────────────────────────────────────────────────
-export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath }: {
+export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath, afcLabels = {} }: {
   productId: string; initialData: ReaderData; unitIdFromUrl?: string; folderPath?: string
+  afcLabels?: Record<string, string>
 }) {
+  const afcLabel = (id: string) => afcLabels[id] || id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())
   // Set module-level state synchronously — these are plain variable assignments, not React state
   if (folderPath) setFolderPath(folderPath)
   if (initialData.footnotes) setFootnotes(initialData.footnotes)
