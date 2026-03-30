@@ -68,8 +68,8 @@ export default function IndiaMapClient({ jurisdiction, reportCounts }: Props) {
 
   const navigate = (iso: string) => {
     if (!iso || !inJur(iso, jurisdiction)) return
-    const jParam = jurisdiction === 'UNION' ? (UT_IDS.has(iso) ? 'UT' : 'STATE') : jurisdiction
-    router.push(`/audit-reports?jurisdiction=${jParam}&state=${iso}`)
+    // UNION is its own jurisdiction type in the DB — pass it through directly
+    router.push(`/audit-reports?jurisdiction=${jurisdiction}&state=${iso}`)
   }
 
   const onEnter = (iso: string, e: React.MouseEvent<SVGPathElement>) => {
@@ -79,13 +79,17 @@ export default function IndiaMapClient({ jurisdiction, reportCounts }: Props) {
     if (rect) setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
 
+  // Per-path leave: clears highlight the moment cursor exits a region.
+  // Without this, the previous region stays highlighted until entering a new one.
+  const onPathLeave = () => { setHovIso(null); setTooltip(null) }
+
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!hovIso) return
     const rect = e.currentTarget.getBoundingClientRect()
     setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
 
-  const onLeave = () => { setHovIso(null); setTooltip(null) }
+  const onSvgLeave = () => { setHovIso(null); setTooltip(null) }
 
   const fill = (iso: string): string => {
     if (!inJur(iso, jurisdiction)) return '#E0E2E4'
@@ -123,7 +127,7 @@ export default function IndiaMapClient({ jurisdiction, reportCounts }: Props) {
           xmlns="http://www.w3.org/2000/svg"
           style={{ width: '100%', height: 'auto', display: 'block' }}
           onMouseMove={onMove}
-          onMouseLeave={onLeave}
+          onMouseLeave={onSvgLeave}
         >
           {(Object.keys(PATH_DATA) as string[]).map(iso => (
             <path
@@ -137,6 +141,7 @@ export default function IndiaMapClient({ jurisdiction, reportCounts }: Props) {
               style={{ cursor: cursor(iso), transition: 'fill .12s' }}
               onClick={() => navigate(iso)}
               onMouseEnter={e => onEnter(iso, e)}
+              onMouseLeave={onPathLeave}
             />
           ))}
         </svg>

@@ -43,7 +43,7 @@ type Jur = 'UT' | 'STATE' | 'UNION' | 'LG'
 const JUR_LABEL: Record<Jur, string> = {
   UT:    'Union Territory',
   STATE: 'State',
-  UNION: 'National',
+  UNION: 'Union',
   LG:    'Local Body',
 }
 
@@ -63,12 +63,12 @@ export default async function AuditReportsMapPage({
 
   const db = await getDb()
 
-  // Match ALL audit_reports for UNION; otherwise filter by jurisdiction
+  // Filter by jurisdiction type — UNION is its own value in catalog_index
   const match: Record<string, unknown> = {
     portal_section: 'audit_reports',
+    jurisdiction: jur,
     state_id: { $exists: true, $ne: null },
   }
-  if (jur !== 'UNION') match.jurisdiction = jur
 
   const rows = await db
     .collection('catalog_index')
@@ -121,7 +121,7 @@ export default async function AuditReportsMapPage({
             fontFamily: '"EB Garamond","Times New Roman",serif',
             fontSize: 30, fontWeight: 700, color: 'var(--navy)', margin: '0 0 6px',
           }}>
-            {jur === 'UNION' ? 'All Audit Reports — National Map' : `${label} Audit Reports — Map View`}
+            `${label} Audit Reports — Map View`
           </h1>
           <p style={{ fontFamily: 'system-ui', fontSize: 13, color: 'var(--ink3)', margin: 0 }}>
             {totalReports} report{totalReports !== 1 ? 's' : ''} across{' '}
@@ -129,7 +129,7 @@ export default async function AuditReportsMapPage({
             · hover for details · click to view reports
           </p>
         </div>
-        <Link href={`/audit-reports?jurisdiction=${jur === 'UNION' ? 'UT' : jur}`} style={{
+        <Link href={`/audit-reports?jurisdiction=${jur}`} style={{
           display: 'inline-flex', alignItems: 'center', gap: 7,
           fontFamily: 'system-ui', fontSize: 12, fontWeight: 600,
           color: 'var(--navy)', background: 'var(--navy-lt)',
@@ -146,7 +146,7 @@ export default async function AuditReportsMapPage({
       {/* Jurisdiction tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
         {([
-          ['National (All)',     'UNION'],
+          ['Union (Central)',    'UNION'],
           ['Union Territories', 'UT'],
           ['States',            'STATE'],
           ['Local Bodies',      'LG'],
@@ -188,7 +188,7 @@ export default async function AuditReportsMapPage({
                   fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
                   letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(255,255,255,.75)',
                 }}>
-                  {jur === 'UNION' ? 'All Regions' : `All ${label}s`}
+                  `All ${label}s`
                 </span>
                 <span style={{
                   fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
@@ -201,11 +201,10 @@ export default async function AuditReportsMapPage({
               {/* Scrollable list */}
               <div style={{ maxHeight: 540, overflowY: 'auto' }}>
                 {allRegions.map(({ id, name, count, isUT }) => {
-                  const linkJur = jur === 'UNION' ? (isUT ? 'UT' : 'STATE') : jur
                   return (
                     <Link
                       key={id}
-                      href={`/audit-reports?jurisdiction=${linkJur}&state=${id}`}
+                      href={`/audit-reports?jurisdiction=${jur}&state=${id}`}
                       style={{
                         display: 'flex', alignItems: 'center',
                         justifyContent: 'space-between',
@@ -261,17 +260,7 @@ export default async function AuditReportsMapPage({
             </div>
           )}
 
-          {jur === 'UNION' && (
-            <div style={{
-              marginTop: 12, padding: '10px 14px',
-              background: 'var(--navy-lt)', borderRadius: 8,
-              border: '1px solid rgba(26,58,107,.15)',
-              fontFamily: 'system-ui', fontSize: 11, color: 'var(--ink3)', lineHeight: 1.5,
-            }}>
-              National view shows all audit reports across every state and union territory.
-              Clicking a region navigates to its filtered report list.
-            </div>
-          )}
+
         </div>
       </div>
     </main>
