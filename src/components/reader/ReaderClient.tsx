@@ -533,6 +533,7 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
               blockVersion={blockVersion}
               initialSectionId={initialSectionId}
               scrollContainer={contentRef}
+              afcLabels={afcLabels}
             />
           )}
         </div>
@@ -543,14 +544,16 @@ export function ReaderClient({ productId, initialData, unitIdFromUrl, folderPath
 }
 
 // ── Chapter page ──────────────────────────────────────────────
-function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion, initialSectionId, scrollContainer }: {
+function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next, onNavigate, chapterIdx, readerMode, blockVersion, initialSectionId, scrollContainer, afcLabels = {} }: {
   unit: FlatUnit; sections: FlatUnit[]; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   prev?: FlatUnit; next?: FlatUnit
   onNavigate: (i:number, sid?:string)=>void; chapterIdx: number; readerMode?: boolean; blockVersion?: number
   initialSectionId?: string | null
   scrollContainer: React.RefObject<HTMLDivElement>
+  afcLabels?: Record<string, string>
 }) {
+  const afcLabel = (id: string) => afcLabels[id] || id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())
 
   // ── Scroll to initial section after this chapter renders ──────
   // useEffect fires AFTER React commits the DOM — getElementById is guaranteed.
