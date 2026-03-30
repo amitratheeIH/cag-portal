@@ -164,22 +164,55 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, section = '
               />
             ))}
           </g>
-          {/* Text labels — same positions as original SVG */}
-          <g id="injsvisns" style={{ pointerEvents: 'none' }}>
-            {Object.entries(LABEL_DATA).map(([svgId, label]) => {
-              const isoId = ID_TO_ISO[svgId.replace('injsvn_', 'injsmap_')]
+
+          {/* Callout boxes — static rounded rects for small states/UTs */}
+          <path
+            d="M82.508,161.408v-45.095c0-4.888,3.999-8.887,8.887-8.887h87.744c4.888,0,8.887,3.999,8.887,8.887v45.095c0,4.888-3.999,8.887-8.887,8.887H91.395C86.507,170.295,82.508,166.296,82.508,161.408z M353.988,207.214h67.37c3.193,0,5.805-2.612,5.805-5.805v-24.234c0-3.193-2.612-5.805-5.805-5.805h-67.37c-3.193,0-5.805,2.612-5.805,5.805v24.234C348.183,204.601,350.795,207.214,353.988,207.214z M649.06,276.512h125.462c4.703,0,8.551-3.848,8.551-8.551v-25.984c0-4.703-3.848-8.551-8.551-8.551H649.06c-4.703,0-8.551,3.848-8.551,8.551v25.984C640.508,272.664,644.356,276.512,649.06,276.512z M836.28,381.557h57.974c3.16,0,5.746-2.586,5.746-5.746v-28.431c0-3.16-2.586-5.746-5.746-5.746H836.28c-3.16,0-5.746,2.586-5.746,5.746v28.431C830.534,378.972,833.12,381.557,836.28,381.557z M825.206,443.23h62.069c3.528,0,6.414-2.886,6.414-6.414v-33.313c0-3.528-2.886-6.414-6.414-6.414h-62.069c-3.528,0-6.414,2.886-6.414,6.414v33.313C818.792,440.343,821.678,443.23,825.206,443.23z M791.68,501.066h67.554c3.694,0,6.716-3.022,6.716-6.716v-33.356c0-3.694-3.022-6.716-6.716-6.716H791.68c-3.694,0-6.716,3.022-6.716,6.716v33.356C784.964,498.043,787.986,501.066,791.68,501.066z M675.926,519.656h70.46c3.766,0,6.847-3.081,6.847-6.847v-33.103c0-3.766-3.081-6.847-6.847-6.847h-70.46c-3.766,0-6.847,3.081-6.847,6.847v33.103C669.079,516.575,672.16,519.656,675.926,519.656z M647.574,440.45h60.577c9.67,0,17.583-7.912,17.583-17.583v-12.583c0-2.75-2.25-5-5-5h-73.159c-2.75,0-5,2.25-5,5v25.165C642.574,438.2,644.824,440.45,647.574,440.45z M598.248,857.83h174.815c7.268,0,13.215-5.947,13.215-13.215V798.15c0-7.268-5.947-13.215-13.215-13.215H598.248c-7.268,0-13.215,5.947-13.215,13.215v46.465C585.033,851.883,590.98,857.83,598.248,857.83z M381.918,906.994h65.348c3.929,0,7.143-3.214,7.143-7.143v-39.537c0-3.929-3.215-7.143-7.143-7.143h-65.348c-3.929,0-7.143,3.214-7.143,7.143v39.537C374.775,903.779,377.99,906.994,381.918,906.994z M174.992,958.443h62.527c3.422,0,6.222-2.8,6.222-6.222v-30.928c0-3.422-2.8-6.222-6.222-6.222h-62.527c-3.422,0-6.222,2.8-6.222,6.222v30.928C168.77,955.643,171.57,958.443,174.992,958.443z M16.729,918.311h86.119c4.233,0,7.697-3.463,7.697-7.697V876.99c0-4.233-3.463-7.697-7.697-7.697H16.729c-4.233,0-7.697,3.464-7.697,7.697v33.625C9.033,914.848,12.496,918.311,16.729,918.311z M110.066,773.131h54.584c3.201,0,5.82-2.619,5.82-5.82v-31.329c0-3.201-2.619-5.82-5.82-5.82h-54.584c-3.201,0-5.82,2.619-5.82,5.82v31.329C104.246,770.512,106.865,773.131,110.066,773.131z M17.289,653.328h111.449c6.813,0,12.388-5.574,12.388-12.388v-69.85c0-6.813-5.574-12.388-12.388-12.388H17.289c-6.813,0-12.388,5.574-12.388,12.388v69.85C4.902,647.753,10.476,653.328,17.289,653.328z M532.063,337.887h70.836c3.975,0,7.227-3.252,7.227-7.227v-36.99c0-3.975-3.252-7.227-7.227-7.227h-70.836c-3.975,0-7.227,3.252-7.227,7.227v36.99C524.836,334.635,528.088,337.887,532.063,337.887z"
+            fill="#f0f4fa"
+            stroke="#9ab0cc"
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+            style={{ pointerEvents: 'none' }}
+          />
+
+          {/* Text labels — callout box labels (centered in their box) */}
+          <g style={{ pointerEvents: 'none' }}>
+            {Object.entries(CALLOUT_LABELS).map(([svgId, label]) => {
+              const mapId = svgId.replace('injsvn_', 'injsmap_')
+              const isoId = ID_TO_ISO[mapId]
               const inJur = isoId ? isInJurisdiction(isoId, jurisdiction) : false
+              const isHovered = mapId === hoveredId
+              const hasReports = isoId ? (reportCounts[isoId] || 0) > 0 : false
+              const textColor = inJur ? (isHovered ? '#1a3a6b' : hasReports ? '#1a3a6b' : '#4a6a8b') : '#aaa'
               return (
-                <text
-                  key={svgId}
-                  x={label.x}
-                  y={label.y}
-                  textAnchor="middle"
-                  fontSize="11"
-                  fontFamily="system-ui, sans-serif"
-                  fontWeight="600"
-                  fill={inJur ? (svgId.replace('injsvn_','injsmap_') === hoveredId ? '#fff' : '#1a3a6b') : '#aaa'}
-                >
+                <text key={svgId} x={label.x} y={label.y}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize="10" fontFamily="system-ui, sans-serif" fontWeight="600"
+                  fill={textColor}>
+                  {label.text}
+                </text>
+              )
+            })}
+          </g>
+
+          {/* Text labels — direct labels (sit on the region) */}
+          <g style={{ pointerEvents: 'none' }}>
+            {Object.entries(DIRECT_LABELS).map(([svgId, label]) => {
+              const mapId = svgId.replace('injsvn_', 'injsmap_')
+              const isoId = ID_TO_ISO[mapId]
+              const inJur = isoId ? isInJurisdiction(isoId, jurisdiction) : false
+              const isHovered = mapId === hoveredId
+              const hasReports = isoId ? (reportCounts[isoId] || 0) > 0 : false
+              // Dark fill needs white text; light fill needs dark text
+              const onDarkBg = inJur && (isHovered || hasReports)
+              return (
+                <text key={svgId} x={label.x} y={label.y}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize="10" fontFamily="system-ui, sans-serif" fontWeight="600"
+                  fill={!inJur ? '#999' : onDarkBg ? '#fff' : '#1a3a6b'}
+                  stroke={onDarkBg ? 'none' : 'none'}
+                  paintOrder="stroke"
+                  style={{ textShadow: onDarkBg ? 'none' : 'none' }}>
                   {label.text}
                 </text>
               )
@@ -244,47 +277,53 @@ function MapPath({ svgId, fill, cursor, onClick, onMouseEnter, onMouseLeave }: {
   )
 }
 
-// ── LABEL DATA — text label positions from original SVG ──────
-const LABEL_DATA: Record<string, { x: number; y: number; text: string }> = {
+// ── CALLOUT BOX LABELS (small states/UTs with callout boxes) ───
+// Position = center of the callout box in SVG coordinates
+const CALLOUT_LABELS: Record<string, { x: number; y: number; text: string }> = {
+  "injsvn_33": { x:135.2, y:143.3, text:"जम्मू-कश्मीर" },
+  "injsvn_30": { x:387.7, y:192.2, text:"चंडीगढ़" },
+  "injsvn_2":  { x:711.8, y:259.2, text:"अरुणाचल" },
+  "injsvn_18": { x:865.0, y:364.5, text:"नागालैंड" },
+  "injsvn_15": { x:856.2, y:423.4, text:"मणिपुर" },
+  "injsvn_17": { x:825.5, y:481.4, text:"मिज़ोरम" },
+  "injsvn_25": { x:711.2, y:499.7, text:"त्रिपुरा" },
+  "injsvn_16": { x:684.2, y:422.4, text:"मेघालय" },
+  "injsvn_29": { x:685.5, y:821.4, text:"अंडमान" },
+  "injsvn_36": { x:414.5, y:880.1, text:"पुडुचेरी" },
+  "injsvn_12": { x:206.8, y:939.8, text:"केरल" },
+  "injsvn_35": { x:55.9,  y:893.8, text:"लक्षद्वीप" },
+  "injsvn_6":  { x:134.4, y:754.5, text:"गोवा" },
+  "injsvn_31": { x:72.8,  y:609.7, text:"दादरा-दमन" },
+  "injsvn_22": { x:567.5, y:315.9, text:"सिक्किम" },
+}
+
+// ── DIRECT LABELS (sit on the region itself) ─────────────────
+const DIRECT_LABELS: Record<string, { x: number; y: number; text: string }> = {
   "injsvn_1":  { x:312.5, y:753.4, text:"आंध्र प्रदेश" },
-  "injsvn_2":  { x:654.8, y:264.1, text:"अरुणाचल प्रदेश" },
   "injsvn_3":  { x:738.9, y:363.5, text:"असम" },
   "injsvn_4":  { x:528.7, y:401.3, text:"बिहार" },
-  "injsvn_5":  { x:400.8, y:538,   text:"छत्तीसगढ़" },
-  "injsvn_6":  { x:123,   y:759.6, text:"गोवा" },
+  "injsvn_5":  { x:400.8, y:538.0, text:"छत्तीसगढ़" },
   "injsvn_7":  { x:99.4,  y:479.7, text:"गुजरात" },
   "injsvn_8":  { x:231.6, y:280.1, text:"हरियाणा" },
-  "injsvn_9":  { x:265.4, y:184,   text:"हिमाचल प्रदेश" },
+  "injsvn_9":  { x:265.4, y:184.0, text:"हिमाचल प्रदेश" },
   "injsvn_10": { x:502.2, y:461.9, text:"झारखंड" },
-  "injsvn_11": { x:200,   y:792.6, text:"कर्नाटक" },
-  "injsvn_12": { x:189.8, y:942.6, text:"केरल" },
+  "injsvn_11": { x:200.0, y:792.6, text:"कर्नाटक" },
   "injsvn_13": { x:273.2, y:488.5, text:"मध्य प्रदेश" },
   "injsvn_14": { x:212.4, y:598.3, text:"महाराष्ट्र" },
-  "injsvn_15": { x:830.5, y:425.4, text:"मणिपुर" },
-  "injsvn_16": { x:658.3, y:431,   text:"मेघालय" },
-  "injsvn_17": { x:797.5, y:485,   text:"मिज़ोरम" },
-  "injsvn_18": { x:837.8, y:370,   text:"नागालैंड" },
   "injsvn_19": { x:497.5, y:564.8, text:"ओड़िशा" },
   "injsvn_20": { x:224.9, y:230.3, text:"पंजाब" },
   "injsvn_21": { x:156.2, y:362.4, text:"राजस्थान" },
-  "injsvn_22": { x:539.4, y:321.5, text:"सिक्किम" },
   "injsvn_23": { x:284.2, y:887.2, text:"तमिलनाडु" },
-  "injsvn_24": { x:318,   y:660.6, text:"तेलंगाना" },
-  "injsvn_25": { x:687.5, y:499.8, text:"त्रिपुरा" },
+  "injsvn_24": { x:318.0, y:660.6, text:"तेलंगाना" },
   "injsvn_26": { x:356.8, y:362.3, text:"उत्तर प्रदेश" },
   "injsvn_27": { x:314.5, y:252.9, text:"उत्तराखंड" },
   "injsvn_28": { x:583.1, y:483.2, text:"पश्चिम बंगाल" },
-  "injsvn_29": { x:608.9, y:818.7, text:"अंडमान" },
-  "injsvn_30": { x:357.6, y:197,   text:"चंडीगढ़" },
-  "injsvn_31": { x:35.7,  y:590.5, text:"दादरा-दमन" },
   "injsvn_32": { x:300.5, y:291.8, text:"दिल्ली" },
-  "injsvn_33": { x:100.5, y:136.9, text:"जम्मू-कश्मीर" },
   "injsvn_34": { x:278.5, y:107.4, text:"लद्दाख" },
-  "injsvn_35": { x:29,    y:897.8, text:"लक्षद्वीप" },
-  "injsvn_36": { x:391,   y:887.2, text:"पुडुचेरी" },
 }
 
 // ── PATH DATA — extracted from the original SVG ───────────────
+
 // Each entry is the d= attribute for that region.
 
 const PATH_DATA: Record<string, string> = {
