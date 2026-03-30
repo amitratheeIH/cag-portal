@@ -206,21 +206,36 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, totalUnionR
 
           {/* Text labels — only for non-union maps */}
           {!isUnion && (
-            <g style={{ pointerEvents: 'none' }}>
+            <g>
               {ALL_LABELS.map(({ svgId, x, y, lines }) => {
                 const mapId = svgId.replace('injsvn_', 'injsmap_')
                 const isoId = ID_TO_ISO[mapId]
-                const inJur = isoId ? isInJurisdiction(isoId, jurisdiction) : false
-                const isHov = mapId === hoveredId
+                const inJur  = isoId ? isInJurisdiction(isoId, jurisdiction) : false
+                const isHov  = mapId === hoveredId
                 const hasRep = isoId ? (reportCounts[isoId] || 0) > 0 : false
-                // Fill colour logic:
-                //   out of jurisdiction → grey (dimmed)
-                //   hovered or has reports → white (on dark navy fill)
-                //   otherwise → dark navy (on light blue fill)
-                const fill = !inJur ? '#ccc' : (isHov || hasRep) ? '#fff' : '#1a3a6b'
-                // Halo (paintOrder stroke) only needed on light fills
-                // On dark fills (white text) no halo needed
-                const needsHalo = inJur && !isHov && !hasRep
+                const inCallout = CALLOUT_LABEL_IDS.has(svgId)
+
+                // Colour logic:
+                // - out of jurisdiction → grey
+                // - callout box label → always dark navy (box is always light #f0f4fa)
+                // - direct label on dark fill (has reports or hovered) → white
+                // - direct label on light fill → dark navy with white halo
+                let fill: string
+                let needsHalo = false
+                if (!inJur) {
+                  fill = '#ccc'
+                } else if (inCallout) {
+                  // Always on light background — dark text, no halo needed
+                  fill = '#1a3a6b'
+                } else if (isHov || hasRep) {
+                  // On dark navy fill — white text
+                  fill = '#ffffff'
+                } else {
+                  // On light blue fill — dark navy with white halo
+                  fill = '#1a3a6b'
+                  needsHalo = true
+                }
+
                 return (
                   <text key={svgId}
                     x={x} y={y}
@@ -231,7 +246,9 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, totalUnionR
                     stroke={needsHalo ? 'rgba(255,255,255,0.95)' : undefined}
                     strokeWidth={needsHalo ? 3 : undefined}
                     paintOrder={needsHalo ? 'stroke' : undefined}
-                    textAnchor="start">
+                    textAnchor="start"
+                    style={{ cursor: inJur ? 'pointer' : 'default' }}
+                    onClick={() => inJur && handleClick(mapId)}>
                     {lines.map((line, i) =>
                       typeof line === 'string'
                         ? <tspan key={i} x={x} dy={i === 0 ? 0 : 13}>{line}</tspan>
@@ -321,6 +338,13 @@ function MapPath({ svgId, fill, cursor, onClick, onMouseEnter, onMouseLeave }: {
 // lines: string = single line, object = tspan with dx/dy offsets
 type LabelLine = string | { t: string; dx: number; dy: number }
 interface LabelEntry { svgId: string; x: number; y: number; lines: LabelLine[] }
+
+// Labels inside callout boxes — background is always #f0f4fa (light), so always dark text
+const CALLOUT_LABEL_IDS = new Set([
+  'injsvn_2','injsvn_6','injsvn_12','injsvn_15','injsvn_16','injsvn_17',
+  'injsvn_18','injsvn_22','injsvn_25','injsvn_29','injsvn_30','injsvn_31',
+  'injsvn_32','injsvn_33','injsvn_35','injsvn_36',
+])
 
 const ALL_LABELS: LabelEntry[] = [
   { svgId:"injsvn_1",  x:312.5, y:753.4, lines:[{t:"आंध्र",dx:0,dy:0},{t:"प्रदेश",dx:-1.093,dy:13}] },
