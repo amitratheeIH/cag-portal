@@ -21,7 +21,7 @@ const STATE_IDS = new Set([
   'IN-TR','IN-UP','IN-UK','IN-WB',
 ])
 // All selectable ISO IDs (PATH_DATA keys)
-const ALL_ISO = new Set([...UT_IDS, ...STATE_IDS])
+const ALL_ISO = new Set([...Array.from(UT_IDS), ...Array.from(STATE_IDS)])
 
 // ─── Region names ─────────────────────────────────────────────────────────────
 const REGION_NAMES: Record<string, string> = {
