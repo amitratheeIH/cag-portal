@@ -170,7 +170,7 @@ interface Props {
 }
 
 export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcMap, recommendations, reportId, afcMeta, topicMeta }: Props) {
-  const afcGroups   = buildGroups(afcCats,  afcMeta,   id => ({ parentId:'other', parentLabel:'Other Findings', subLabel: afcLabel(id) }))
+  const afcGroups   = buildGroups(afcCats,  afcMeta,   id => ({ parentId:'other', parentLabel:'Other Findings', subLabel: id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) }))
   const topicGroups = buildGroups(topics,   topicMeta, id => ({ parentId:'other', parentLabel:'Other Topics',   subLabel: id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) }))
 
   return (
