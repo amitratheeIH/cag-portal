@@ -14,10 +14,17 @@ export default async function AuditReportsMapPage({
 }: {
   searchParams: { jurisdiction?: string }
 }) {
-  const jur = (searchParams.jurisdiction || 'UT') as 'UT' | 'STATE' | 'LG'
+  const jur = (searchParams.jurisdiction || 'UT') as 'UT' | 'STATE' | 'LG' | 'UNION'
   const label = JUR_LABELS[jur] || jur
 
   const db = await getDb()
+
+  // For UNION: just count total reports, no per-state breakdown
+  let totalUnionReports = 0
+  if (jur === 'UNION') {
+    totalUnionReports = await db.collection('catalog_index')
+      .countDocuments({ portal_section: 'audit_reports', jurisdiction: 'UNION' })
+  }
 
   // Get report counts per state.
   // Try catalog_index.state_id first (populated after v1.9 reingest).
@@ -104,6 +111,7 @@ export default async function AuditReportsMapPage({
         {[
           { label: 'Union Territories', jur: 'UT'    },
           { label: 'States',            jur: 'STATE' },
+          { label: 'Union',             jur: 'UNION' },
           { label: 'Local Bodies',      jur: 'LG'    },
         ].map(item => (
           <Link key={item.jur}
@@ -129,6 +137,7 @@ export default async function AuditReportsMapPage({
           <IndiaMapClient
             jurisdiction={jur}
             reportCounts={reportCounts}
+            totalUnionReports={totalUnionReports}
           />
         </div>
 

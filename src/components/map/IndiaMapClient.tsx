@@ -49,25 +49,39 @@ function isInJurisdiction(isoId: string, jurisdiction: string): boolean {
 }
 
 interface Props {
-  jurisdiction: 'UT' | 'STATE' | 'LG'
-  reportCounts: Record<string, number>  // stateId → count
+  jurisdiction: 'UT' | 'STATE' | 'LG' | 'UNION'
+  reportCounts: Record<string, number>  // stateId → count (ignored for UNION)
+  totalUnionReports?: number            // shown in tooltip for UNION map
   section?: string
 }
 
-export default function IndiaMapClient({ jurisdiction, reportCounts, section = 'audit_reports' }: Props) {
+export default function IndiaMapClient({ jurisdiction, reportCounts, totalUnionReports = 0, section = 'audit_reports' }: Props) {
   const router = useRouter()
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   const [hoveredCount, setHoveredCount] = useState<number>(0)
+  const [indiaHovered, setIndiaHovered] = useState(false)
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
 
+  const isUnion = jurisdiction === 'UNION'
+
   const handleClick = (svgId: string) => {
+    if (isUnion) {
+      router.push('/audit-reports?jurisdiction=UNION')
+      return
+    }
     const isoId = ID_TO_ISO[svgId]
     if (!isoId || !isInJurisdiction(isoId, jurisdiction)) return
     router.push(`/audit-reports?jurisdiction=${jurisdiction}&state=${isoId}`)
   }
 
   const handleMouseEnter = (svgId: string, name: string, e: React.MouseEvent) => {
+    if (isUnion) {
+      setIndiaHovered(true)
+      const rect = (e.currentTarget as SVGElement).closest('svg')?.getBoundingClientRect()
+      if (rect) setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      return
+    }
     const isoId = ID_TO_ISO[svgId]
     if (!isoId || !isInJurisdiction(isoId, jurisdiction)) return
     setHoveredId(svgId)
@@ -78,7 +92,7 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, section = '
   }
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!hoveredId) return
+    if (!hoveredId && !indiaHovered) return
     const rect = (e.currentTarget as SVGElement).closest('svg')?.getBoundingClientRect()
     if (rect) setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
@@ -86,21 +100,26 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, section = '
   const handleMouseLeave = () => {
     setHoveredId(null)
     setHoveredName(null)
+    setIndiaHovered(false)
     setTooltip(null)
   }
 
   const getFill = (svgId: string): string => {
+    if (isUnion) {
+      return indiaHovered ? '#005999' : '#1a3a6b'  // whole India one colour
+    }
     const isoId = ID_TO_ISO[svgId]
     if (!isoId) return '#EBECED'
     const inJur = isInJurisdiction(isoId, jurisdiction)
-    if (!inJur) return '#E8E8E8'          // out of jurisdiction — light grey
-    if (svgId === hoveredId) return '#005999'  // hovered — navy blue
+    if (!inJur) return '#E8E8E8'
+    if (svgId === hoveredId) return '#005999'
     const count = reportCounts[isoId] || 0
-    if (count > 0) return '#1a3a6b'       // has reports — dark navy
-    return '#b8d4e8'                      // in jurisdiction, no reports — light blue
+    if (count > 0) return '#1a3a6b'
+    return '#b8d4e8'
   }
 
   const getCursor = (svgId: string): string => {
+    if (isUnion) return 'pointer'
     const isoId = ID_TO_ISO[svgId]
     if (!isoId || !isInJurisdiction(isoId, jurisdiction)) return 'default'
     return 'pointer'
@@ -126,20 +145,28 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, section = '
   return (
     <div style={{ position: 'relative', width: '100%', maxWidth: '700px', margin: '0 auto' }}>
       {/* Legend */}
-      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '12px', fontFamily: 'system-ui', fontSize: '11px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <div style={{ width: '12px', height: '12px', background: '#1a3a6b', borderRadius: '2px' }}/>
-          <span style={{ color: 'var(--ink2)' }}>Has audit reports</span>
+      {!isUnion && (
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '12px', fontFamily: 'system-ui', fontSize: '11px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div style={{ width: '12px', height: '12px', background: '#1a3a6b', borderRadius: '2px' }}/>
+            <span style={{ color: 'var(--ink2)' }}>Has audit reports</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div style={{ width: '12px', height: '12px', background: '#b8d4e8', borderRadius: '2px' }}/>
+            <span style={{ color: 'var(--ink2)' }}>No reports yet</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div style={{ width: '12px', height: '12px', background: '#E8E8E8', borderRadius: '2px' }}/>
+            <span style={{ color: 'var(--ink2)' }}>Different jurisdiction</span>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <div style={{ width: '12px', height: '12px', background: '#b8d4e8', borderRadius: '2px' }}/>
-          <span style={{ color: 'var(--ink2)' }}>No reports yet</span>
+      )}
+      {isUnion && (
+        <div style={{ fontFamily: 'system-ui', fontSize: '12px', color: 'var(--ink3)', marginBottom: '12px' }}>
+          Union audit reports cover central government ministries, departments and PSUs across all of India.
+          Click the map to view all Union reports.
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <div style={{ width: '12px', height: '12px', background: '#E8E8E8', borderRadius: '2px' }}/>
-          <span style={{ color: 'var(--ink2)' }}>Different jurisdiction</span>
-        </div>
-      </div>
+      )}
 
       {/* SVG Map */}
       <div style={{ background: '#f8fbff', borderRadius: '10px', border: '1px solid var(--rule)', overflow: 'hidden', position: 'relative' }}>
@@ -175,53 +202,45 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, section = '
             style={{ pointerEvents: 'none' }}
           />
 
-          {/* Text labels — callout box labels (centered in their box) */}
-          <g style={{ pointerEvents: 'none' }}>
-            {Object.entries(CALLOUT_LABELS).map(([svgId, label]) => {
-              const mapId = svgId.replace('injsvn_', 'injsmap_')
-              const isoId = ID_TO_ISO[mapId]
-              const inJur = isoId ? isInJurisdiction(isoId, jurisdiction) : false
-              const isHovered = mapId === hoveredId
-              const hasReports = isoId ? (reportCounts[isoId] || 0) > 0 : false
-              const textColor = inJur ? (isHovered ? '#1a3a6b' : hasReports ? '#1a3a6b' : '#4a6a8b') : '#aaa'
-              return (
-                <text key={svgId} x={label.x} y={label.y}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fontSize="10" fontFamily="system-ui, sans-serif" fontWeight="600"
-                  fill={textColor}>
-                  {label.text}
-                </text>
-              )
-            })}
-          </g>
-
-          {/* Text labels — direct labels (sit on the region) */}
-          <g style={{ pointerEvents: 'none' }}>
-            {Object.entries(DIRECT_LABELS).map(([svgId, label]) => {
-              const mapId = svgId.replace('injsvn_', 'injsmap_')
-              const isoId = ID_TO_ISO[mapId]
-              const inJur = isoId ? isInJurisdiction(isoId, jurisdiction) : false
-              const isHovered = mapId === hoveredId
-              const hasReports = isoId ? (reportCounts[isoId] || 0) > 0 : false
-              // Dark fill needs white text; light fill needs dark text
-              const onDarkBg = inJur && (isHovered || hasReports)
-              return (
-                <text key={svgId} x={label.x} y={label.y}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fontSize="10" fontFamily="system-ui, sans-serif" fontWeight="600"
-                  fill={!inJur ? '#999' : onDarkBg ? '#fff' : '#1a3a6b'}
-                  stroke={onDarkBg ? 'none' : 'none'}
-                  paintOrder="stroke"
-                  style={{ textShadow: onDarkBg ? 'none' : 'none' }}>
-                  {label.text}
-                </text>
-              )
-            })}
-          </g>
+          {/* Text labels — only for non-union maps */}
+          {!isUnion && (
+            <g style={{ pointerEvents: 'none' }}>
+              {ALL_LABELS.map(({ svgId, x, y, lines }) => {
+                const mapId = svgId.replace('injsvn_', 'injsmap_')
+                const isoId = ID_TO_ISO[mapId]
+                const inJur = isoId ? isInJurisdiction(isoId, jurisdiction) : false
+                const isHovered = mapId === hoveredId
+                const hasReports = isoId ? (reportCounts[isoId] || 0) > 0 : false
+                const onDark = inJur && (isHovered || hasReports)
+                const fill  = !inJur ? '#bbb' : onDark ? '#ffffff' : '#1a3a6b'
+                // White halo behind text so it's readable over any fill colour
+                const stroke      = onDark ? 'none' : 'rgba(255,255,255,0.9)'
+                const strokeWidth = onDark ? 0 : 3
+                return (
+                  <text key={svgId}
+                    x={x} y={y}
+                    fontSize="10"
+                    fontFamily="system-ui, sans-serif"
+                    fontWeight="700"
+                    fill={fill}
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    paintOrder="stroke"
+                    textAnchor="start">
+                    {lines.map((line, i) =>
+                      typeof line === 'string'
+                        ? <tspan key={i} x={x} dy={i === 0 ? 0 : 13}>{line}</tspan>
+                        : <tspan key={i} x={x + (line as {t:string;dx:number;dy:number}).dx} dy={(line as {t:string;dx:number;dy:number}).dy === 0 ? 0 : 13}>{(line as {t:string;dx:number;dy:number}).t}</tspan>
+                    )}
+                  </text>
+                )
+              })}
+            </g>
+          )}
         </svg>
 
         {/* Tooltip */}
-        {tooltip && hoveredName && (
+        {tooltip && (hoveredName || indiaHovered) && (
           <div style={{
             position: 'absolute',
             left: tooltip.x + 12,
@@ -235,14 +254,29 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, section = '
             zIndex: 10,
             whiteSpace: 'nowrap',
           }}>
-            <div style={{ fontFamily: 'system-ui', fontSize: '12px', fontWeight: 700, color: 'var(--navy)' }}>
-              {hoveredName}
-            </div>
-            <div style={{ fontFamily: 'system-ui', fontSize: '11px', color: 'var(--ink3)', marginTop: '2px' }}>
-              {hoveredCount > 0
-                ? `${hoveredCount} audit report${hoveredCount !== 1 ? 's' : ''} — click to view`
-                : 'No reports available yet'}
-            </div>
+            {isUnion ? (
+              <>
+                <div style={{ fontFamily: 'system-ui', fontSize: '12px', fontWeight: 700, color: 'var(--navy)' }}>
+                  India — Union
+                </div>
+                <div style={{ fontFamily: 'system-ui', fontSize: '11px', color: 'var(--ink3)', marginTop: '2px' }}>
+                  {totalUnionReports > 0
+                    ? `${totalUnionReports} union audit report${totalUnionReports !== 1 ? 's' : ''} — click to view`
+                    : 'Click to view union audit reports'}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontFamily: 'system-ui', fontSize: '12px', fontWeight: 700, color: 'var(--navy)' }}>
+                  {hoveredName}
+                </div>
+                <div style={{ fontFamily: 'system-ui', fontSize: '11px', color: 'var(--ink3)', marginTop: '2px' }}>
+                  {hoveredCount > 0
+                    ? `${hoveredCount} audit report${hoveredCount !== 1 ? 's' : ''} — click to view`
+                    : 'No reports available yet'}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -277,52 +311,53 @@ function MapPath({ svgId, fill, cursor, onClick, onMouseEnter, onMouseLeave }: {
   )
 }
 
-// ── CALLOUT BOX LABELS (small states/UTs with callout boxes) ───
-// Position = center of the callout box in SVG coordinates
-const CALLOUT_LABELS: Record<string, { x: number; y: number; text: string }> = {
-  "injsvn_33": { x:135.2, y:143.3, text:"जम्मू-कश्मीर" },
-  "injsvn_30": { x:387.7, y:192.2, text:"चंडीगढ़" },
-  "injsvn_2":  { x:711.8, y:259.2, text:"अरुणाचल" },
-  "injsvn_18": { x:865.0, y:364.5, text:"नागालैंड" },
-  "injsvn_15": { x:856.2, y:423.4, text:"मणिपुर" },
-  "injsvn_17": { x:825.5, y:481.4, text:"मिज़ोरम" },
-  "injsvn_25": { x:711.2, y:499.7, text:"त्रिपुरा" },
-  "injsvn_16": { x:684.2, y:422.4, text:"मेघालय" },
-  "injsvn_29": { x:685.5, y:821.4, text:"अंडमान" },
-  "injsvn_36": { x:414.5, y:880.1, text:"पुडुचेरी" },
-  "injsvn_12": { x:206.8, y:939.8, text:"केरल" },
-  "injsvn_35": { x:55.9,  y:893.8, text:"लक्षद्वीप" },
-  "injsvn_6":  { x:134.4, y:754.5, text:"गोवा" },
-  "injsvn_31": { x:72.8,  y:609.7, text:"दादरा-दमन" },
-  "injsvn_22": { x:567.5, y:315.9, text:"सिक्किम" },
-}
+// ── ALL LABELS — exact positions from original SVG ──────────────
+// x,y = text start point (text-anchor: start, matching original SVG behaviour)
+// lines: string = single line, object = tspan with dx/dy offsets
+type LabelLine = string | { t: string; dx: number; dy: number }
+interface LabelEntry { svgId: string; x: number; y: number; lines: LabelLine[] }
 
-// ── DIRECT LABELS (sit on the region itself) ─────────────────
-const DIRECT_LABELS: Record<string, { x: number; y: number; text: string }> = {
-  "injsvn_1":  { x:312.5, y:753.4, text:"आंध्र प्रदेश" },
-  "injsvn_3":  { x:738.9, y:363.5, text:"असम" },
-  "injsvn_4":  { x:528.7, y:401.3, text:"बिहार" },
-  "injsvn_5":  { x:400.8, y:538.0, text:"छत्तीसगढ़" },
-  "injsvn_7":  { x:99.4,  y:479.7, text:"गुजरात" },
-  "injsvn_8":  { x:231.6, y:280.1, text:"हरियाणा" },
-  "injsvn_9":  { x:265.4, y:184.0, text:"हिमाचल प्रदेश" },
-  "injsvn_10": { x:502.2, y:461.9, text:"झारखंड" },
-  "injsvn_11": { x:200.0, y:792.6, text:"कर्नाटक" },
-  "injsvn_13": { x:273.2, y:488.5, text:"मध्य प्रदेश" },
-  "injsvn_14": { x:212.4, y:598.3, text:"महाराष्ट्र" },
-  "injsvn_19": { x:497.5, y:564.8, text:"ओड़िशा" },
-  "injsvn_20": { x:224.9, y:230.3, text:"पंजाब" },
-  "injsvn_21": { x:156.2, y:362.4, text:"राजस्थान" },
-  "injsvn_23": { x:284.2, y:887.2, text:"तमिलनाडु" },
-  "injsvn_24": { x:318.0, y:660.6, text:"तेलंगाना" },
-  "injsvn_26": { x:356.8, y:362.3, text:"उत्तर प्रदेश" },
-  "injsvn_27": { x:314.5, y:252.9, text:"उत्तराखंड" },
-  "injsvn_28": { x:583.1, y:483.2, text:"पश्चिम बंगाल" },
-  "injsvn_32": { x:300.5, y:291.8, text:"दिल्ली" },
-  "injsvn_34": { x:278.5, y:107.4, text:"लद्दाख" },
-}
+const ALL_LABELS: LabelEntry[] = [
+  { svgId:"injsvn_1",  x:312.5, y:753.4, lines:[{t:"आंध्र",dx:0,dy:0},{t:"प्रदेश",dx:-1.093,dy:13}] },
+  { svgId:"injsvn_2",  x:654.8, y:264.1, lines:["अरुणाचल प्रदेश"] },
+  { svgId:"injsvn_3",  x:738.9, y:363.5, lines:["असम"] },
+  { svgId:"injsvn_4",  x:528.7, y:401.3, lines:["बिहार"] },
+  { svgId:"injsvn_5",  x:400.8, y:538,   lines:["छत्तीसगढ़"] },
+  { svgId:"injsvn_6",  x:123,   y:759.6, lines:["गोवा"] },
+  { svgId:"injsvn_7",  x:99.4,  y:479.7, lines:["गुजरात"] },
+  { svgId:"injsvn_8",  x:231.6, y:280.1, lines:["हरियाणा"] },
+  { svgId:"injsvn_9",  x:265.4, y:184,   lines:[{t:"हिमाचल",dx:0,dy:0},{t:"प्रदेश",dx:7.178,dy:13}] },
+  { svgId:"injsvn_10", x:502.2, y:461.9, lines:["झारखंड"] },
+  { svgId:"injsvn_11", x:200,   y:792.6, lines:["कर्नाटक"] },
+  { svgId:"injsvn_12", x:189.8, y:942.6, lines:["केरल"] },
+  { svgId:"injsvn_13", x:273.2, y:488.5, lines:["मध्य प्रदेश"] },
+  { svgId:"injsvn_14", x:212.4, y:598.3, lines:["महाराष्ट्र"] },
+  { svgId:"injsvn_15", x:830.5, y:425.4, lines:["मणिपुर"] },
+  { svgId:"injsvn_16", x:658.3, y:431,   lines:["मेघालय"] },
+  { svgId:"injsvn_17", x:797.5, y:485,   lines:["मिज़ोरम"] },
+  { svgId:"injsvn_18", x:837.8, y:370,   lines:["नागालैंड"] },
+  { svgId:"injsvn_19", x:497.5, y:564.8, lines:["ओड़िशा"] },
+  { svgId:"injsvn_20", x:224.9, y:230.3, lines:["पंजाब"] },
+  { svgId:"injsvn_21", x:156.2, y:362.4, lines:["राजस्थान"] },
+  { svgId:"injsvn_22", x:539.4, y:321.5, lines:["सिक्किम"] },
+  { svgId:"injsvn_23", x:284.2, y:887.2, lines:["तमिलनाडु"] },
+  { svgId:"injsvn_24", x:318,   y:660.6, lines:["तेलंगाना"] },
+  { svgId:"injsvn_25", x:687.5, y:499.8, lines:["त्रिपुरा"] },
+  { svgId:"injsvn_26", x:356.8, y:362.3, lines:["उत्तर प्रदेश"] },
+  { svgId:"injsvn_27", x:314.5, y:252.9, lines:["उत्तराखंड"] },
+  { svgId:"injsvn_28", x:583.1, y:483.2, lines:[{t:"पश्चिम",dx:0,dy:0},{t:"बंगाल",dx:6.488,dy:13}] },
+  { svgId:"injsvn_29", x:608.9, y:818.7, lines:[{t:"अंडमान और निकोबार",dx:0,dy:0},{t:"द्वीप समूह",dx:38.428,dy:13}] },
+  { svgId:"injsvn_30", x:357.6, y:197,   lines:["चंडीगढ़"] },
+  { svgId:"injsvn_31", x:35.7,  y:590.5, lines:[{t:"दादरा और",dx:0,dy:0},{t:"नगर हवेली",dx:-17.896,dy:13},{t:"दमन और दीव",dx:-7.8,dy:26}] },
+  { svgId:"injsvn_32", x:300.5, y:291.8, lines:["दिल्ली"] },
+  { svgId:"injsvn_33", x:100.5, y:136.9, lines:[{t:"जम्मू और",dx:0,dy:0},{t:"कश्मीर",dx:10.364,dy:13}] },
+  { svgId:"injsvn_34", x:278.5, y:107.4, lines:["लद्दाख"] },
+  { svgId:"injsvn_35", x:29,    y:897.8, lines:["लक्षद्वीप"] },
+  { svgId:"injsvn_36", x:391,   y:887.2, lines:["पुडुचेरी"] },
+]
 
 // ── PATH DATA — extracted from the original SVG ───────────────
+
 
 // Each entry is the d= attribute for that region.
 
