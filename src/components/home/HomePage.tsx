@@ -469,10 +469,10 @@ export default function HomePage() {
                 title="Audit Reports"
                 total={c.audit.total}
                 items={[
-                  { label: 'Union Audit Reports',  count: c.audit.union,  href: '/reports?section=audit_reports&jurisdiction=UNION' },
-                  { label: 'State Audit Reports',  count: c.audit.state,  href: '/reports?section=audit_reports&jurisdiction=STATE' },
-                  { label: 'UT Audit Reports',     count: c.audit.ut,     href: '/reports?section=audit_reports&jurisdiction=UT'    },
-                  { label: 'Local Body Reports',   count: c.audit.lg,     href: '/reports?section=audit_reports&jurisdiction=LG'    },
+                  { label: 'Union Audit Reports',  count: c.audit.union,  href: '/audit-reports?jurisdiction=UNION' },
+                  { label: 'State Audit Reports',  count: c.audit.state,  href: '/audit-reports?jurisdiction=STATE' },
+                  { label: 'UT Audit Reports',     count: c.audit.ut,     href: '/audit-reports?jurisdiction=UT'    },
+                  { label: 'Local Body Reports',   count: c.audit.lg,     href: '/audit-reports?jurisdiction=LG'    },
                 ]}
               />
 
@@ -506,9 +506,9 @@ export default function HomePage() {
                 title="Other Reports"
                 total={c.other.total || null}
                 items={[
-                  { label: 'Study Reports',    count: c.other.study,       href: '/reports?section=study_reports' },
-                  { label: 'Compendiums',      count: c.other.compendium,  href: '/reports?section=compendium'    },
-                  { label: 'Impact Studies',   count: c.other.impact_study, href: '/reports?section=compendium'   },
+                  { label: 'Study Reports',    count: c.other.study,       href: '/other-reports' },
+                  { label: 'Compendiums',      count: c.other.compendium,  href: '/other-reports'    },
+                  { label: 'Impact Studies',   count: c.other.impact_study, href: '/other-reports'   },
                 ]}
               />
 
@@ -546,28 +546,28 @@ export default function HomePage() {
             <LatestStrip
               title="Audit Reports"
               color="var(--navy)"
-              href="/reports?section=audit_reports"
+              href="/audit-reports"
               reports={latest.audit_reports || []}
               loading={loading}
             />
             <LatestStrip
               title="Accounts Reports"
               color="#5a3f8a"
-              href="/reports?section=accounts_reports"
+              href="/accounts"
               reports={latest.accounts_reports || []}
               loading={loading}
             />
             <LatestStrip
               title="Finance Reports"
               color="var(--green)"
-              href="/reports?section=finance_reports"
+              href="/finance"
               reports={latest.finance_reports || []}
               loading={loading}
             />
             <LatestStrip
               title="Study Reports &amp; Compendiums"
               color="var(--saffron)"
-              href="/reports?section=study_reports"
+              href="/other-reports"
               reports={latest.study_reports || []}
               loading={loading}
             />

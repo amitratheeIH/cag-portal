@@ -92,7 +92,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 className="hover:text-white hover:bg-white/10 transition-colors">
                 Home
               </a>
-              <a href="/reports" style={{ color: 'rgba(255,255,255,.8)', fontSize: '13px', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontFamily: 'system-ui' }}
+              <a href="/audit-reports" style={{ color: 'rgba(255,255,255,.8)', fontSize: '13px', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontFamily: 'system-ui' }}
                 className="hover:text-white hover:bg-white/10 transition-colors">
                 Reports
               </a>
