@@ -61,9 +61,13 @@ export default async function ReportPage({ params, searchParams }: Props) {
     })
   )
 
-  // Fetch all NDJSON block files
+  // Fetch all NDJSON block files for root-level units.
+  // Includes chapters, front/back matter AND orphan sections (sections with
+  // no parent, e.g. a standalone signature section like SEC18).
+  const childSet = new Set(allUnits.flatMap(u => (u as ContentUnit & {children?:string[]}).children || []))
   const chapterUnits = allUnits.filter(u =>
-    ['chapter', 'preface', 'executive_summary', 'appendix', 'annexure'].includes(u.unit_type)
+    ['chapter', 'preface', 'executive_summary', 'appendix', 'annexure'].includes(u.unit_type) ||
+    (u.unit_type === 'section' && !childSet.has(u.unit_id))
   )
   const allBlocks: Record<string, ContentBlock[]> = {}
   await Promise.allSettled(
