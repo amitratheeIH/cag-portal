@@ -164,6 +164,27 @@ export default function IndiaMapClient({ jurisdiction, reportCounts, section = '
               />
             ))}
           </g>
+          {/* Text labels — same positions as original SVG */}
+          <g id="injsvisns" style={{ pointerEvents: 'none' }}>
+            {Object.entries(LABEL_DATA).map(([svgId, label]) => {
+              const isoId = ID_TO_ISO[svgId.replace('injsvn_', 'injsmap_')]
+              const inJur = isoId ? isInJurisdiction(isoId, jurisdiction) : false
+              return (
+                <text
+                  key={svgId}
+                  x={label.x}
+                  y={label.y}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fontFamily="system-ui, sans-serif"
+                  fontWeight="600"
+                  fill={inJur ? (svgId.replace('injsvn_','injsmap_') === hoveredId ? '#fff' : '#1a3a6b') : '#aaa'}
+                >
+                  {label.text}
+                </text>
+              )
+            })}
+          </g>
         </svg>
 
         {/* Tooltip */}
@@ -221,6 +242,46 @@ function MapPath({ svgId, fill, cursor, onClick, onMouseEnter, onMouseLeave }: {
       onMouseLeave={onMouseLeave}
     />
   )
+}
+
+// ── LABEL DATA — text label positions from original SVG ──────
+const LABEL_DATA: Record<string, { x: number; y: number; text: string }> = {
+  "injsvn_1":  { x:312.5, y:753.4, text:"आंध्र प्रदेश" },
+  "injsvn_2":  { x:654.8, y:264.1, text:"अरुणाचल प्रदेश" },
+  "injsvn_3":  { x:738.9, y:363.5, text:"असम" },
+  "injsvn_4":  { x:528.7, y:401.3, text:"बिहार" },
+  "injsvn_5":  { x:400.8, y:538,   text:"छत्तीसगढ़" },
+  "injsvn_6":  { x:123,   y:759.6, text:"गोवा" },
+  "injsvn_7":  { x:99.4,  y:479.7, text:"गुजरात" },
+  "injsvn_8":  { x:231.6, y:280.1, text:"हरियाणा" },
+  "injsvn_9":  { x:265.4, y:184,   text:"हिमाचल प्रदेश" },
+  "injsvn_10": { x:502.2, y:461.9, text:"झारखंड" },
+  "injsvn_11": { x:200,   y:792.6, text:"कर्नाटक" },
+  "injsvn_12": { x:189.8, y:942.6, text:"केरल" },
+  "injsvn_13": { x:273.2, y:488.5, text:"मध्य प्रदेश" },
+  "injsvn_14": { x:212.4, y:598.3, text:"महाराष्ट्र" },
+  "injsvn_15": { x:830.5, y:425.4, text:"मणिपुर" },
+  "injsvn_16": { x:658.3, y:431,   text:"मेघालय" },
+  "injsvn_17": { x:797.5, y:485,   text:"मिज़ोरम" },
+  "injsvn_18": { x:837.8, y:370,   text:"नागालैंड" },
+  "injsvn_19": { x:497.5, y:564.8, text:"ओड़िशा" },
+  "injsvn_20": { x:224.9, y:230.3, text:"पंजाब" },
+  "injsvn_21": { x:156.2, y:362.4, text:"राजस्थान" },
+  "injsvn_22": { x:539.4, y:321.5, text:"सिक्किम" },
+  "injsvn_23": { x:284.2, y:887.2, text:"तमिलनाडु" },
+  "injsvn_24": { x:318,   y:660.6, text:"तेलंगाना" },
+  "injsvn_25": { x:687.5, y:499.8, text:"त्रिपुरा" },
+  "injsvn_26": { x:356.8, y:362.3, text:"उत्तर प्रदेश" },
+  "injsvn_27": { x:314.5, y:252.9, text:"उत्तराखंड" },
+  "injsvn_28": { x:583.1, y:483.2, text:"पश्चिम बंगाल" },
+  "injsvn_29": { x:608.9, y:818.7, text:"अंडमान" },
+  "injsvn_30": { x:357.6, y:197,   text:"चंडीगढ़" },
+  "injsvn_31": { x:35.7,  y:590.5, text:"दादरा-दमन" },
+  "injsvn_32": { x:300.5, y:291.8, text:"दिल्ली" },
+  "injsvn_33": { x:100.5, y:136.9, text:"जम्मू-कश्मीर" },
+  "injsvn_34": { x:278.5, y:107.4, text:"लद्दाख" },
+  "injsvn_35": { x:29,    y:897.8, text:"लक्षद्वीप" },
+  "injsvn_36": { x:391,   y:887.2, text:"पुडुचेरी" },
 }
 
 // ── PATH DATA — extracted from the original SVG ───────────────

@@ -19,15 +19,42 @@ export default async function AuditReportsMapPage({
 
   const db = await getDb()
 
-  // Count reports per state_id for this jurisdiction
-  const pipeline = [
+  // Get report counts per state.
+  // Try catalog_index.state_id first (populated after v1.9 reingest).
+  // Fall back to joining with report_meta to get state_ut.id.
+  const reportCounts: Record<string, number> = {}
+
+  // Fast path: state_id already in catalog_index
+  const fastRows = await db.collection('catalog_index').aggregate([
     { $match: { portal_section: 'audit_reports', jurisdiction: jur, state_id: { $exists: true, $ne: null } } },
     { $group: { _id: '$state_id', count: { $sum: 1 } } },
-  ]
-  const rows = await db.collection('catalog_index').aggregate(pipeline).toArray()
-  const reportCounts: Record<string, number> = {}
-  for (const row of rows) {
-    if (row._id) reportCounts[row._id] = row.count
+  ]).toArray()
+
+  if (fastRows.length > 0) {
+    for (const row of fastRows) {
+      if (row._id) reportCounts[row._id] = row.count
+    }
+  } else {
+    // Slow path: join with report_meta to extract state_ut.id
+    const slowRows = await db.collection('catalog_index').aggregate([
+      { $match: { portal_section: 'audit_reports', jurisdiction: jur } },
+      { $lookup: {
+        from: 'report_meta',
+        localField: 'product_id',
+        foreignField: 'product_id',
+        as: 'meta'
+      }},
+      { $unwind: { path: '$meta', preserveNullAndEmptyArrays: false } },
+      { $project: {
+        state_id: '$meta.metadata.specific.report_level.state_ut.id'
+      }},
+      { $match: { state_id: { $exists: true, $ne: null } } },
+      { $group: { _id: '$state_id', count: { $sum: 1 } } },
+    ]).toArray()
+
+    for (const row of slowRows) {
+      if (row._id) reportCounts[row._id] = row.count
+    }
   }
 
   const totalRegions  = Object.keys(reportCounts).length
