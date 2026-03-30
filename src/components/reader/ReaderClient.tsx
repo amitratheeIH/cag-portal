@@ -675,7 +675,7 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
           <UnitBlocks uid={uid} blocks={blocks} blockVersion={blockVersion}/>
 
           {sections.map(sec=>(
-            <SectionBlock key={sec.unit_id} unit={sec} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={1} blockVersion={blockVersion}/>
+            <SectionBlock key={sec.unit_id} unit={sec} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={1} blockVersion={blockVersion} afcLabels={afcLabels}/>
           ))}
 
           {fnotes.length > 0 && <FnList footnotes={fnotes}/>}
@@ -695,11 +695,13 @@ function ChapterPage({ unit, sections, flatUnits, unitFiles, blocks, prev, next,
 }
 
 // ── Section block ─────────────────────────────────────────────
-function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1, blockVersion }: {
+function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1, blockVersion, afcLabels = {} }: {
   unit: FlatUnit; flatUnits: FlatUnit[]
   unitFiles: Record<string,ContentUnit>; blocks: Record<string,ContentBlock[]>
   depth?: number; blockVersion?: number
+  afcLabels?: Record<string, string>
 }) {
+  const afcLabel = (id: string) => afcLabels[id] || id.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())
   const uid    = unit.unit_id
   const uFile  = unitFiles[uid] || unit
   const title  = ml(uFile.title || unit.title)
@@ -743,7 +745,7 @@ function SectionBlock({ unit, flatUnits, unitFiles, blocks, depth = 1, blockVers
       <UnitBlocks uid={uid} blocks={blocks} blockVersion={blockVersion}/>
       {/* Render children recursively */}
       {children.map(child=>(
-        <SectionBlock key={child.unit_id} unit={child} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={depth+1} blockVersion={blockVersion}/>
+        <SectionBlock key={child.unit_id} unit={child} flatUnits={flatUnits} unitFiles={unitFiles} blocks={blocks} depth={depth+1} blockVersion={blockVersion} afcLabels={afcLabels}/>
       ))}
     </div>
   )
