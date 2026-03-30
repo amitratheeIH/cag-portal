@@ -5,49 +5,32 @@ import IndiaMapClient from '@/components/map/IndiaMapClient'
 
 export const metadata: Metadata = { title: 'Browse by Map — CAG Audit Reports' }
 
-// ─── Full region registry ────────────────────────────────────────────────────
+// ─── Complete region registry ─────────────────────────────────────────────────
 const REGION_NAMES: Record<string, string> = {
   'IN-AN': 'Andaman & Nicobar Islands',
-  'IN-AP': 'Andhra Pradesh',
-  'IN-AR': 'Arunachal Pradesh',
-  'IN-AS': 'Assam',
-  'IN-BR': 'Bihar',
-  'IN-CH': 'Chandigarh',
-  'IN-CT': 'Chhattisgarh',
+  'IN-AP': 'Andhra Pradesh',       'IN-AR': 'Arunachal Pradesh',
+  'IN-AS': 'Assam',                'IN-BR': 'Bihar',
+  'IN-CH': 'Chandigarh',           'IN-CT': 'Chhattisgarh',
   'IN-DD': 'Dadra, Nagar Haveli & Daman-Diu',
-  'IN-DL': 'Delhi (NCT)',
-  'IN-GA': 'Goa',
-  'IN-GJ': 'Gujarat',
-  'IN-HR': 'Haryana',
-  'IN-HP': 'Himachal Pradesh',
-  'IN-JK': 'Jammu & Kashmir',
-  'IN-JH': 'Jharkhand',
-  'IN-KA': 'Karnataka',
-  'IN-KL': 'Kerala',
-  'IN-LD': 'Lakshadweep',
-  'IN-MP': 'Madhya Pradesh',
-  'IN-MH': 'Maharashtra',
-  'IN-MN': 'Manipur',
-  'IN-ML': 'Meghalaya',
-  'IN-MZ': 'Mizoram',
-  'IN-NL': 'Nagaland',
-  'IN-OD': 'Odisha',
-  'IN-PY': 'Puducherry',
-  'IN-PB': 'Punjab',
-  'IN-RJ': 'Rajasthan',
-  'IN-SK': 'Sikkim',
-  'IN-TN': 'Tamil Nadu',
-  'IN-TG': 'Telangana',
-  'IN-TR': 'Tripura',
-  'IN-UP': 'Uttar Pradesh',
-  'IN-UK': 'Uttarakhand',
-  'IN-WB': 'West Bengal',
+  'IN-DL': 'Delhi (NCT)',          'IN-GA': 'Goa',
+  'IN-GJ': 'Gujarat',              'IN-HR': 'Haryana',
+  'IN-HP': 'Himachal Pradesh',     'IN-JK': 'Jammu & Kashmir',
+  'IN-JH': 'Jharkhand',            'IN-KA': 'Karnataka',
+  'IN-KL': 'Kerala',               'IN-LA': 'Ladakh',
+  'IN-LD': 'Lakshadweep',          'IN-MP': 'Madhya Pradesh',
+  'IN-MH': 'Maharashtra',          'IN-MN': 'Manipur',
+  'IN-ML': 'Meghalaya',            'IN-MZ': 'Mizoram',
+  'IN-NL': 'Nagaland',             'IN-OD': 'Odisha',
+  'IN-PY': 'Puducherry',           'IN-PB': 'Punjab',
+  'IN-RJ': 'Rajasthan',            'IN-SK': 'Sikkim',
+  'IN-TN': 'Tamil Nadu',           'IN-TG': 'Telangana',
+  'IN-TR': 'Tripura',              'IN-UP': 'Uttar Pradesh',
+  'IN-UK': 'Uttarakhand',          'IN-WB': 'West Bengal',
 }
 
 const ALL_UTS: string[] = [
-  'IN-AN','IN-CH','IN-DD','IN-DL','IN-JK','IN-LD','IN-PY',
+  'IN-AN','IN-CH','IN-DD','IN-DL','IN-JK','IN-LA','IN-LD','IN-PY',
 ]
-
 const ALL_STATES: string[] = [
   'IN-AP','IN-AR','IN-AS','IN-BR','IN-CT','IN-GA','IN-GJ','IN-HR',
   'IN-HP','IN-JH','IN-KA','IN-KL','IN-MP','IN-MH','IN-MN','IN-ML',
@@ -55,8 +38,13 @@ const ALL_STATES: string[] = [
   'IN-TR','IN-UP','IN-UK','IN-WB',
 ]
 
-const JUR_LABELS: Record<string, string> = {
-  STATE: 'State', UT: 'Union Territory', LG: 'Local Body',
+type Jur = 'UT' | 'STATE' | 'UNION' | 'LG'
+
+const JUR_LABEL: Record<Jur, string> = {
+  UT:    'Union Territory',
+  STATE: 'State',
+  UNION: 'National',
+  LG:    'Local Body',
 }
 
 export default async function AuditReportsMapPage({
@@ -64,47 +52,50 @@ export default async function AuditReportsMapPage({
 }: {
   searchParams: { jurisdiction?: string }
 }) {
-  const jur    = (searchParams.jurisdiction || 'UT') as 'UT' | 'STATE' | 'LG'
-  const label  = JUR_LABELS[jur] || jur
-  const allIds = jur === 'STATE' ? ALL_STATES : jur === 'UT' ? ALL_UTS : [...ALL_UTS, ...ALL_STATES]
+  const jur    = ((searchParams.jurisdiction || 'UT') as Jur)
+  const label  = JUR_LABEL[jur] ?? jur
+
+  // Which ISO IDs appear in the right panel
+  const panelIds =
+    jur === 'UNION' ? [...ALL_UTS, ...ALL_STATES] :
+    jur === 'STATE' ? ALL_STATES :
+    jur === 'UT'    ? ALL_UTS : []
 
   const db = await getDb()
 
-  // ── Count reports per state_id for this jurisdiction ──
+  // Match ALL audit_reports for UNION; otherwise filter by jurisdiction
+  const match: Record<string, unknown> = {
+    portal_section: 'audit_reports',
+    state_id: { $exists: true, $ne: null },
+  }
+  if (jur !== 'UNION') match.jurisdiction = jur
+
   const rows = await db
     .collection('catalog_index')
     .aggregate([
-      {
-        $match: {
-          portal_section: 'audit_reports',
-          jurisdiction: jur,
-          state_id: { $exists: true, $ne: null },
-        },
-      },
+      { $match: match },
       { $group: { _id: '$state_id', count: { $sum: 1 } } },
     ])
     .toArray()
 
-  // reportCounts: stateId → count (only regions WITH reports)
   const reportCounts: Record<string, number> = {}
   for (const row of rows) {
     if (row._id) reportCounts[row._id] = row.count
   }
 
-  // ── Build full list (all regions, count = 0 if no reports) ──
-  const allRegions = allIds.map(id => ({
+  // Build full list: all panel regions, count = 0 if none
+  const allRegions = panelIds.map(id => ({
     id,
-    name:  REGION_NAMES[id] ?? id,
-    count: reportCounts[id] ?? 0,
+    name:    REGION_NAMES[id] ?? id,
+    count:   reportCounts[id] ?? 0,
+    isUT:    ALL_UTS.includes(id),
   }))
-
-  // Sort: regions with reports first (by count desc), then alphabetical
   allRegions.sort((a, b) =>
     b.count !== a.count ? b.count - a.count : a.name.localeCompare(b.name)
   )
 
   const totalReports = Object.values(reportCounts).reduce((s, n) => s + n, 0)
-  const covered      = Object.keys(reportCounts).length
+  const covered      = allRegions.filter(r => r.count > 0).length
 
   return (
     <main id="main-content" style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 20px 60px' }}>
@@ -130,15 +121,15 @@ export default async function AuditReportsMapPage({
             fontFamily: '"EB Garamond","Times New Roman",serif',
             fontSize: 30, fontWeight: 700, color: 'var(--navy)', margin: '0 0 6px',
           }}>
-            {label} Audit Reports — Map View
+            {jur === 'UNION' ? 'All Audit Reports — National Map' : `${label} Audit Reports — Map View`}
           </h1>
           <p style={{ fontFamily: 'system-ui', fontSize: 13, color: 'var(--ink3)', margin: 0 }}>
             {totalReports} report{totalReports !== 1 ? 's' : ''} across{' '}
-            {covered} of {allIds.length} {label.toLowerCase()}{allIds.length !== 1 ? 's' : ''}{' '}
-            · hover a region for details · click to view reports
+            {covered} of {panelIds.length} region{panelIds.length !== 1 ? 's' : ''}{' '}
+            · hover for details · click to view reports
           </p>
         </div>
-        <Link href={`/audit-reports?jurisdiction=${jur}`} style={{
+        <Link href={`/audit-reports?jurisdiction=${jur === 'UNION' ? 'UT' : jur}`} style={{
           display: 'inline-flex', alignItems: 'center', gap: 7,
           fontFamily: 'system-ui', fontSize: 12, fontWeight: 600,
           color: 'var(--navy)', background: 'var(--navy-lt)',
@@ -155,6 +146,7 @@ export default async function AuditReportsMapPage({
       {/* Jurisdiction tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
         {([
+          ['National (All)',     'UNION'],
           ['Union Territories', 'UT'],
           ['States',            'STATE'],
           ['Local Bodies',      'LG'],
@@ -180,89 +172,107 @@ export default async function AuditReportsMapPage({
           <IndiaMapClient jurisdiction={jur} reportCounts={reportCounts} />
         </div>
 
-        {/* Right panel — ALL regions, count 0 if no reports */}
+        {/* Right panel — ALL regions with 0 fallback */}
         <div style={{ flex: '0 0 270px', minWidth: 220 }}>
-          <div style={{
-            background: '#fff', border: '1px solid var(--rule)',
-            borderRadius: 10, overflow: 'hidden',
-          }}>
-            {/* Panel header */}
-            <div style={{ background: 'var(--navy)', padding: '11px 16px',
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{
-                fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
-                letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(255,255,255,.75)',
-              }}>
-                All {label}s
-              </span>
-              <span style={{
-                fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
-                color: 'rgba(255,255,255,.5)', letterSpacing: '0.5px',
-              }}>
-                {covered}/{allIds.length} with reports
-              </span>
-            </div>
-
-            {/* Scrollable list */}
-            <div style={{ maxHeight: 520, overflowY: 'auto' }}>
-              {allRegions.map(({ id, name, count }) => (
-                <Link
-                  key={id}
-                  href={`/audit-reports?jurisdiction=${jur}&state=${id}`}
-                  style={{
-                    display: 'flex', alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '9px 16px',
-                    borderBottom: '1px solid var(--rule-lt)',
-                    textDecoration: 'none',
-                    background: '#fff',
-                    transition: 'background .1s',
-                  }}
-                  className="map-region-row"
-                >
-                  <span style={{
-                    fontFamily: 'system-ui', fontSize: 12,
-                    color: count > 0 ? 'var(--ink)' : 'var(--ink3)',
-                    fontWeight: count > 0 ? 500 : 400,
-                    flex: 1, marginRight: 8,
-                    lineHeight: 1.35,
-                  }}>
-                    {name}
-                  </span>
-                  {count > 0 ? (
-                    <span style={{
-                      fontFamily: 'system-ui', fontSize: 11, fontWeight: 700,
-                      background: 'var(--navy)', color: '#fff',
-                      padding: '2px 9px', borderRadius: 10, flexShrink: 0,
-                    }}>
-                      {count}
-                    </span>
-                  ) : (
-                    <span style={{
-                      fontFamily: 'system-ui', fontSize: 10,
-                      color: 'var(--ink3)', flexShrink: 0,
-                    }}>
-                      —
-                    </span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {jur === 'LG' && (
+          {panelIds.length > 0 ? (
             <div style={{
-              marginTop: 16, background: 'var(--amber-lt)',
-              border: '1px solid rgba(122,74,0,.2)',
-              borderRadius: 8, padding: '12px 14px',
+              background: '#fff', border: '1px solid var(--rule)',
+              borderRadius: 10, overflow: 'hidden',
             }}>
-              <p style={{ fontFamily: 'system-ui', fontSize: 12, color: 'var(--amber)', margin: 0, lineHeight: 1.5 }}>
-                Local body data requires <code>state_id</code> in the catalog. Counts will populate after the next pipeline run.
-              </p>
+              {/* Panel header */}
+              <div style={{
+                background: 'var(--navy)', padding: '11px 16px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span style={{
+                  fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
+                  letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(255,255,255,.75)',
+                }}>
+                  {jur === 'UNION' ? 'All Regions' : `All ${label}s`}
+                </span>
+                <span style={{
+                  fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
+                  color: 'rgba(255,255,255,.5)',
+                }}>
+                  {covered}/{panelIds.length} with reports
+                </span>
+              </div>
+
+              {/* Scrollable list */}
+              <div style={{ maxHeight: 540, overflowY: 'auto' }}>
+                {allRegions.map(({ id, name, count, isUT }) => {
+                  const linkJur = jur === 'UNION' ? (isUT ? 'UT' : 'STATE') : jur
+                  return (
+                    <Link
+                      key={id}
+                      href={`/audit-reports?jurisdiction=${linkJur}&state=${id}`}
+                      style={{
+                        display: 'flex', alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '9px 16px',
+                        borderBottom: '1px solid var(--rule-lt)',
+                        textDecoration: 'none', background: '#fff',
+                      }}
+                      className="map-region-row"
+                    >
+                      <span style={{ flex: 1, marginRight: 8 }}>
+                        <span style={{
+                          fontFamily: 'system-ui', fontSize: 12,
+                          color: count > 0 ? 'var(--ink)' : 'var(--ink3)',
+                          fontWeight: count > 0 ? 500 : 400,
+                          lineHeight: 1.35, display: 'block',
+                        }}>
+                          {name}
+                        </span>
+                        {jur === 'UNION' && (
+                          <span style={{
+                            fontFamily: 'system-ui', fontSize: 9,
+                            color: 'var(--ink3)', letterSpacing: '0.5px',
+                            textTransform: 'uppercase',
+                          }}>
+                            {isUT ? 'UT' : 'State'}
+                          </span>
+                        )}
+                      </span>
+                      {count > 0 ? (
+                        <span style={{
+                          fontFamily: 'system-ui', fontSize: 11, fontWeight: 700,
+                          background: 'var(--navy)', color: '#fff',
+                          padding: '2px 9px', borderRadius: 10, flexShrink: 0,
+                        }}>
+                          {count}
+                        </span>
+                      ) : (
+                        <span style={{ fontFamily: 'system-ui', fontSize: 10,
+                                       color: 'var(--ink3)', flexShrink: 0 }}>
+                          —
+                        </span>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: '20px 16px', fontFamily: 'system-ui', fontSize: 13,
+                          color: 'var(--ink3)', textAlign: 'center',
+                          border: '1px solid var(--rule)', borderRadius: 10 }}>
+              Local body data requires <code>state_id</code> in the catalog.
+            </div>
+          )}
+
+          {jur === 'UNION' && (
+            <div style={{
+              marginTop: 12, padding: '10px 14px',
+              background: 'var(--navy-lt)', borderRadius: 8,
+              border: '1px solid rgba(26,58,107,.15)',
+              fontFamily: 'system-ui', fontSize: 11, color: 'var(--ink3)', lineHeight: 1.5,
+            }}>
+              National view shows all audit reports across every state and union territory.
+              Clicking a region navigates to its filtered report list.
             </div>
           )}
         </div>
-
       </div>
     </main>
   )
