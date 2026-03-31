@@ -480,10 +480,10 @@ export default function HomePage() {
                 titleHref="/audit-reports"
                 total={c.audit.total}
                 items={[
-                  { label: 'Union Audit Reports',  count: c.audit.union,  href: '/audit-reports?jurisdiction=UNION' },
-                  { label: 'State Audit Reports',  count: c.audit.state,  href: '/audit-reports?jurisdiction=STATE' },
-                  { label: 'UT Audit Reports',     count: c.audit.ut,     href: '/audit-reports?jurisdiction=UT'    },
-                  { label: 'Local Body Reports',   count: c.audit.lg,     href: '/audit-reports?jurisdiction=LG'    },
+                  { label: 'Union Audit Reports',  count: c.audit.union,  href: '/audit-reports/list?jurisdiction=UNION' },
+                  { label: 'State Audit Reports',  count: c.audit.state,  href: '/audit-reports/list?jurisdiction=STATE' },
+                  { label: 'UT Audit Reports',     count: c.audit.ut,     href: '/audit-reports/list?jurisdiction=UT'    },
+                  { label: 'Local Body Reports',   count: c.audit.lg,     href: '/audit-reports/list?jurisdiction=LG'    },
                 ]}
               />
 

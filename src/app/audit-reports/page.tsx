@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/mongodb'
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import TopicsSection from '@/components/audit/TopicsSection'
 
 export const metadata: Metadata = { title: 'Audit Reports — CAG Digital Repository' }
 
@@ -168,102 +169,11 @@ export default async function AuditReportsLandingPage() {
       </section>
 
       {/* ── Section 2: Browse by Topic ────────────────────────────────────── */}
-      <section style={{ marginBottom: 56 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-          <h2 style={{ fontFamily: '"EB Garamond","Times New Roman",serif',
-                       fontSize: 22, fontWeight: 700, color: 'var(--navy)', margin: 0 }}>
-            Browse by Topic
-          </h2>
-          <span style={{ fontFamily: 'system-ui', fontSize: 12, color: 'var(--ink3)' }}>
-            {parents.length} topic areas · {children.length} sub-topics
-          </span>
-        </div>
-
-        {parents.length === 0 ? (
-          <div style={{ padding: '20px 24px', borderRadius: 8, background: '#f8f9fa',
-                        border: '1px solid var(--rule)', fontFamily: 'system-ui',
-                        fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>
-            Run <code>sync_taxonomies.py</code> to populate topic data.
-          </div>
-        ) : (
-          <div style={{ columns: '280px 3', gap: 16 }}>
-            {parents.map(p => {
-              const subs = byParent[p.id] || []
-              const pLabel = p.label?.en || p.id
-              return (
-                <div key={p.id} style={{
-                  breakInside: 'avoid', marginBottom: 16,
-                  background: '#fff', border: '1px solid var(--rule)', borderRadius: 10, overflow: 'hidden',
-                }}>
-                  {/* Parent topic header */}
-                  <Link href={'/audit-reports/list?topic=' + p.id} style={{
-                    display: 'block', padding: '10px 14px',
-                    background: 'var(--navy-lt)', textDecoration: 'none',
-                    borderBottom: '1px solid var(--rule-lt)',
-                  }}>
-                    <span style={{ fontFamily: 'system-ui', fontSize: 12.5, fontWeight: 700,
-                                   color: 'var(--navy)', lineHeight: 1.3 }}>
-                      {pLabel}
-                    </span>
-                  </Link>
-
-                  {/* Sub-topics */}
-                  <div>
-                    {subs.map((s, i) => (
-                      <Link key={s.id} href={'/audit-reports/list?topic=' + s.id} style={{
-                        display: 'block', padding: '7px 14px 7px 20px',
-                        borderBottom: i < subs.length - 1 ? '1px solid var(--rule-lt)' : 'none',
-                        textDecoration: 'none',
-                        fontFamily: 'system-ui', fontSize: 12, color: 'var(--ink2)',
-                        lineHeight: 1.35,
-                        transition: 'background .1s, color .1s',
-                      }}
-                        onMouseEnter={undefined}
-                        className="sub-topic-row"
-                      >
-                        {s.label?.en || s.id}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ── Section 3: Full Text Search (coming soon) ─────────────────────── */}
-      <section>
-        <h2 style={{ fontFamily: '"EB Garamond","Times New Roman",serif',
-                     fontSize: 22, fontWeight: 700, color: 'var(--navy)', margin: '0 0 18px' }}>
-          Full Text Search
-          <span style={{ fontFamily: 'system-ui', fontSize: 11, fontWeight: 600,
-                         color: 'var(--ink3)', marginLeft: 12, verticalAlign: 'middle',
-                         background: '#f0f4fa', padding: '3px 10px', borderRadius: 20,
-                         border: '1px solid var(--rule)' }}>
-            Coming soon
-          </span>
-        </h2>
-        <div style={{
-          padding: '32px 24px', borderRadius: 10, border: '2px dashed var(--rule)',
-          background: '#fafbfc', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
-        }}>
-          <div style={{ fontSize: 36 }}>🔍</div>
-          <div>
-            <div style={{ fontFamily: '"EB Garamond","Times New Roman",serif',
-                          fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>
-              Search across all audit report content
-            </div>
-            <p style={{ fontFamily: 'system-ui', fontSize: 13, color: 'var(--ink3)', margin: 0 }}>
-              Full text search across findings, recommendations and report text will be available here.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <style>{`
-        .sub-topic-row:hover { background: var(--navy-lt) !important; color: var(--navy) !important; }
-      `}</style>
+      <TopicsSection topics={parents.map(p => ({
+        id: p.id,
+        label: p.label?.en || p.id,
+        subs: (byParent[p.id] || []).map(s => ({ id: s.id, label: s.label?.en || s.id })),
+      }))} />
 
     </main>
   )

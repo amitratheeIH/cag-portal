@@ -34,7 +34,17 @@ export default async function AuditReportsPage({
   if (searchParams.jurisdiction) filter.jurisdiction = searchParams.jurisdiction
   if (searchParams.state)        filter.state_id     = searchParams.state
   if (searchParams.year)         filter.year         = parseInt(searchParams.year)
-  if (searchParams.topic)        filter.topics       = searchParams.topic
+  if (searchParams.topic) {
+    // If a parent topic is clicked, also match all its sub-topics
+    // so reports tagged with sub-topics appear under the parent
+    const db2 = await getDb()
+    const subTopics = await db2.collection('taxonomy_topics')
+      .distinct('id', { parent_id: searchParams.topic, level: 'sub_topic' })
+    const topicIds = subTopics.length > 0
+      ? [searchParams.topic, ...subTopics]   // parent + all subs
+      : [searchParams.topic]                 // leaf topic (sub_topic itself)
+    filter.topics = { $in: topicIds }
+  }
 
   const docs = await db
     .collection('catalog_index')
@@ -69,8 +79,8 @@ export default async function AuditReportsPage({
   const crumbs = [
     { label: 'Home', href: '/' },
     { label: 'Audit Reports', href: '/audit-reports' },
-    ...(jur         ? [{ label: JUR_LABELS[jur] || jur, href: '/audit-reports?jurisdiction=' + jur }] : []),
-    ...(topicFilter ? [{ label: 'Topic filter', href: '/audit-reports?topic=' + topicFilter }] : []),
+    ...(jur         ? [{ label: JUR_LABELS[jur] || jur, href: '/audit-reports/list?jurisdiction=' + jur }] : []),
+    ...(topicFilter ? [{ label: 'Topic filter', href: '/audit-reports/list?topic=' + topicFilter }] : []),
   ]
 
   return (
@@ -122,12 +132,12 @@ export default async function AuditReportsPage({
         <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
           {[
             { label:'All',             href:'/audit-reports' },
-            { label:'Union',           href:'/audit-reports?jurisdiction=UNION' },
-            { label:'State',           href:'/audit-reports?jurisdiction=STATE' },
-            { label:'Union Territory', href:'/audit-reports?jurisdiction=UT' },
-            { label:'Local Body',      href:'/audit-reports?jurisdiction=LG' },
+            { label:'Union',           href:'/audit-reports/list?jurisdiction=UNION' },
+            { label:'State',           href:'/audit-reports/list?jurisdiction=STATE' },
+            { label:'Union Territory', href:'/audit-reports/list?jurisdiction=UT' },
+            { label:'Local Body',      href:'/audit-reports/list?jurisdiction=LG' },
           ].map(({ label, href }) => {
-            const active = href === `/audit-reports${jur ? `?jurisdiction=${jur}` : ''}`
+            const active = href === `/audit-reports/list${jur ? `?jurisdiction=${jur}` : ''}`
             return (
               <Link key={label} href={href} style={{
                 fontFamily:'system-ui', fontSize:'12px', fontWeight:600,
@@ -155,7 +165,7 @@ export default async function AuditReportsPage({
               }}>All</Link>
             {years.slice(0, 8).map(y => {
               const yStr = y.toString()
-              const href = `/audit-reports?${jur ? `jurisdiction=${jur}&` : ''}year=${yStr}`
+              const href = `/audit-reports/list?${jur ? `jurisdiction=${jur}&` : ''}year=${yStr}`
               const active = yearFilter === yStr
               return (
                 <Link key={yStr} href={href} style={{
