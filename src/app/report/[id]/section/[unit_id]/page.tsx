@@ -76,7 +76,7 @@ export default async function SectionViewerPage({
   const blockDocs = await db.collection('block_vectors')
     .find({ product_id: productId, unit_id }, { projection: { block_id:1, block_type:1, seq:1 } })
     .sort({ seq: 1 })
-    .toArray() as { block_id:string; block_type:string; seq:number }[]
+    .toArray() as unknown as { block_id:string; block_type:string; seq:number }[]
 
   // ── Fetch actual block content from NDJSON ───────────────────────────────
   let blocks: unknown[] = []
@@ -104,7 +104,7 @@ export default async function SectionViewerPage({
     ? await db.collection('block_vectors')
         .find({ product_id: productId, unit_id }, { projection: { text_snippet:1, seq:1, block_type:1 } })
         .sort({ seq: 1 })
-        .toArray() as { text_snippet:string; block_type:string; seq:number }[]
+        .toArray() as unknown as { text_snippet:string; block_type:string; seq:number }[]
     : []
 
   const reportTitle = ml(cat.title)
