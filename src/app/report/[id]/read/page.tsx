@@ -110,7 +110,7 @@ export default async function ReportPage({ params, searchParams }: Props) {
       }}
       unitIdFromUrl={searchParams.unit}
       folderPath={folderPath}
-      afcLabels={getAfcLabels()}
+      afcLabels={await getAfcLabels()}
     />
   )
 }
