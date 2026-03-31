@@ -1,16 +1,13 @@
 'use client'
-// IndiaMapClient.tsx — v4
-// Uses simplemaps-derived paths, viewBox "0 0 1000 1000".
-// Has Ladakh (IN-LA) as a separate region.
-// No hardcoded text labels — tooltip only.
-// Props:
-//   jurisdiction  'UT' | 'STATE' | 'UNION' | 'LG'
-//   reportCounts  Record<isoId, count>
+// IndiaMapClient.tsx — v5
+// Includes both the SVG map AND the right-panel sidebar.
+// Shared hover state links map regions to sidebar rows bidirectionally.
+// UNION mode: entire map is one clickable entity; sidebar shows one row.
 
-import React, { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 
-// ─── ISO sets ────────────────────────────────────────────────────────────────
+// ─── Sets ─────────────────────────────────────────────────────────────────────
 const UT_IDS = new Set([
   'IN-AN','IN-CH','IN-DD','IN-DL','IN-JK','IN-LA','IN-LD','IN-PY',
 ])
@@ -20,168 +17,281 @@ const STATE_IDS = new Set([
   'IN-MZ','IN-NL','IN-OD','IN-PB','IN-RJ','IN-SK','IN-TN','IN-TG',
   'IN-TR','IN-UP','IN-UK','IN-WB',
 ])
-// All selectable ISO IDs (PATH_DATA keys)
-const ALL_ISO = new Set([...Array.from(UT_IDS), ...Array.from(STATE_IDS)])
 
-// ─── Region names ─────────────────────────────────────────────────────────────
 const REGION_NAMES: Record<string, string> = {
   'IN-AN': 'Andaman & Nicobar Islands',
-  'IN-AP': 'Andhra Pradesh',       'IN-AR': 'Arunachal Pradesh',
-  'IN-AS': 'Assam',                'IN-BR': 'Bihar',
-  'IN-CH': 'Chandigarh',           'IN-CT': 'Chhattisgarh',
+  'IN-AP': 'Andhra Pradesh',    'IN-AR': 'Arunachal Pradesh',
+  'IN-AS': 'Assam',             'IN-BR': 'Bihar',
+  'IN-CH': 'Chandigarh',        'IN-CT': 'Chhattisgarh',
   'IN-DD': 'Dadra, Nagar Haveli & Daman-Diu',
-  'IN-DL': 'Delhi (NCT)',          'IN-GA': 'Goa',
-  'IN-GJ': 'Gujarat',              'IN-HR': 'Haryana',
-  'IN-HP': 'Himachal Pradesh',     'IN-JK': 'Jammu & Kashmir',
-  'IN-JH': 'Jharkhand',            'IN-KA': 'Karnataka',
-  'IN-KL': 'Kerala',               'IN-LA': 'Ladakh',
-  'IN-LD': 'Lakshadweep',          'IN-MP': 'Madhya Pradesh',
-  'IN-MH': 'Maharashtra',          'IN-MN': 'Manipur',
-  'IN-ML': 'Meghalaya',            'IN-MZ': 'Mizoram',
-  'IN-NL': 'Nagaland',             'IN-OD': 'Odisha',
-  'IN-PY': 'Puducherry',           'IN-PB': 'Punjab',
-  'IN-RJ': 'Rajasthan',            'IN-SK': 'Sikkim',
-  'IN-TN': 'Tamil Nadu',           'IN-TG': 'Telangana',
-  'IN-TR': 'Tripura',              'IN-UP': 'Uttar Pradesh',
-  'IN-UK': 'Uttarakhand',          'IN-WB': 'West Bengal',
+  'IN-DL': 'Delhi (NCT)',       'IN-GA': 'Goa',
+  'IN-GJ': 'Gujarat',           'IN-HR': 'Haryana',
+  'IN-HP': 'Himachal Pradesh',  'IN-JK': 'Jammu & Kashmir',
+  'IN-JH': 'Jharkhand',         'IN-KA': 'Karnataka',
+  'IN-KL': 'Kerala',            'IN-LA': 'Ladakh',
+  'IN-LD': 'Lakshadweep',       'IN-MP': 'Madhya Pradesh',
+  'IN-MH': 'Maharashtra',       'IN-MN': 'Manipur',
+  'IN-ML': 'Meghalaya',         'IN-MZ': 'Mizoram',
+  'IN-NL': 'Nagaland',          'IN-OD': 'Odisha',
+  'IN-PY': 'Puducherry',        'IN-PB': 'Punjab',
+  'IN-RJ': 'Rajasthan',         'IN-SK': 'Sikkim',
+  'IN-TN': 'Tamil Nadu',        'IN-TG': 'Telangana',
+  'IN-TR': 'Tripura',           'IN-UP': 'Uttar Pradesh',
+  'IN-UK': 'Uttarakhand',       'IN-WB': 'West Bengal',
 }
 
 function inJur(iso: string, jur: string): boolean {
   if (jur === 'UT')    return UT_IDS.has(iso)
   if (jur === 'STATE') return STATE_IDS.has(iso)
-  if (jur === 'UNION') return ALL_ISO.has(iso)  // all states + UTs
-  return true // LG
+  return true // UNION, LG — all regions
 }
+
+export interface Region { id: string; name: string; count: number }
 
 interface Props {
   jurisdiction: 'UT' | 'STATE' | 'UNION' | 'LG'
-  reportCounts:  Record<string, number>
+  reportCounts: Record<string, number>
+  /** Pre-sorted list for the sidebar. Empty for UNION mode. */
+  allRegions:   Region[]
+  totalReports: number
 }
 
-export default function IndiaMapClient({ jurisdiction, reportCounts }: Props) {
-  const router = useRouter()
-  const [hovIso,  setHovIso]  = useState<string | null>(null)
-  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
+export default function IndiaMapClient({
+  jurisdiction, reportCounts, allRegions, totalReports,
+}: Props) {
+  const isUnion = jurisdiction === 'UNION'
 
-  const hovName  = hovIso ? REGION_NAMES[hovIso] : null
-  const hovCount = hovIso ? (reportCounts[hovIso] ?? 0) : 0
+  // ── Shared hover ISO — drives both map fill and sidebar highlight ──────────
+  const [hovIso,   setHovIso]   = useState<string | null>(null)
+  const [tooltip,  setTooltip]  = useState<{ x: number; y: number } | null>(null)
+  // Hover from sidebar (no tooltip, just map highlight)
+  const [sideHov,  setSideHov]  = useState<string | null>(null)
+  const activeIso = hovIso ?? sideHov  // map hover takes precedence
 
-  const navigate = (iso: string) => {
-    if (!iso || !inJur(iso, jurisdiction)) return
-    // UNION is its own jurisdiction type in the DB — pass it through directly
-    router.push(`/audit-reports?jurisdiction=${jurisdiction}&state=${iso}`)
+  // Ref to scroll the active sidebar row into view when map hover changes
+  const rowRefs = useRef<Record<string, HTMLAnchorElement | null>>({})
+  useEffect(() => {
+    if (hovIso && rowRefs.current[hovIso]) {
+      rowRefs.current[hovIso]!.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+  }, [hovIso])
+
+  // ── Colour logic ───────────────────────────────────────────────────────────
+  const fill = (iso: string): string => {
+    if (isUnion) {
+      // All regions same colour — map is one entity
+      return totalReports > 0 ? '#1a3a6b' : '#c8ddf0'
+    }
+    if (!inJur(iso, jurisdiction)) return '#E0E2E4'
+    if (iso === activeIso)         return '#2563EB'
+    return (reportCounts[iso] ?? 0) > 0 ? '#1a3a6b' : '#c8ddf0'
   }
 
+  // ── Map event handlers ─────────────────────────────────────────────────────
   const onEnter = (iso: string, e: React.MouseEvent<SVGPathElement>) => {
-    if (!iso || !inJur(iso, jurisdiction)) return
+    if (isUnion || !inJur(iso, jurisdiction)) return
     setHovIso(iso)
     const rect = e.currentTarget.closest('svg')?.getBoundingClientRect()
     if (rect) setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
-
-  // Per-path leave: clears highlight the moment cursor exits a region.
-  // Without this, the previous region stays highlighted until entering a new one.
   const onPathLeave = () => { setHovIso(null); setTooltip(null) }
-
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!hovIso) return
     const rect = e.currentTarget.getBoundingClientRect()
     setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
-
   const onSvgLeave = () => { setHovIso(null); setTooltip(null) }
 
-  const fill = (iso: string): string => {
-    if (!inJur(iso, jurisdiction)) return '#E0E2E4'
-    if (iso === hovIso)             return '#2563EB'
-    return (reportCounts[iso] ?? 0) > 0 ? '#1a3a6b' : '#c8ddf0'
-  }
-
-  const cursor = (iso: string) => inJur(iso, jurisdiction) ? 'pointer' : 'default'
-
-  const isUnion = jurisdiction === 'UNION'
+  const hovName  = activeIso ? REGION_NAMES[activeIso] : null
+  const hovCount = activeIso ? (reportCounts[activeIso] ?? 0) : 0
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10,
-                    fontSize: 11, fontFamily: 'system-ui', color: 'var(--ink2)' }}>
-        {([
-          ['#1a3a6b', 'Has audit reports'],
-          ['#c8ddf0', 'No reports yet'],
-          ...(isUnion ? [] : [['#E0E2E4', 'Other jurisdiction']] as [string,string][]),
-        ] as [string,string][]).map(([c, l]) => (
-          <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ display: 'inline-block', width: 11, height: 11, background: c, borderRadius: 2 }}/>
-            {l}
-          </span>
-        ))}
-      </div>
+      {/* ── Left: map ─────────────────────────────────────────────────────── */}
+      <div style={{ flex: '1 1 400px', minWidth: 0 }}>
 
-      {/* Map */}
-      <div style={{ position: 'relative', background: '#f4f7fc',
-                    borderRadius: 10, border: '1px solid var(--rule)', overflow: 'hidden' }}>
-        <svg
-          viewBox="0 0 1000 1000"
-          xmlns="http://www.w3.org/2000/svg"
-          style={{ width: '100%', height: 'auto', display: 'block' }}
-          onMouseMove={onMove}
-          onMouseLeave={onSvgLeave}
-        >
-          {(Object.keys(PATH_DATA) as string[]).map(iso => (
-            <path
-              key={iso}
-              id={iso}
-              d={PATH_DATA[iso]}
-              fill={fill(iso)}
-              stroke="#fff"
-              strokeWidth="0.8"
-              vectorEffect="non-scaling-stroke"
-              style={{ cursor: cursor(iso), transition: 'fill .12s' }}
-              onClick={() => navigate(iso)}
-              onMouseEnter={e => onEnter(iso, e)}
-              onMouseLeave={onPathLeave}
-            />
-          ))}
-        </svg>
-
-        {/* Tooltip */}
-        {tooltip && hovName && (
-          <div style={{
-            position: 'absolute',
-            left: tooltip.x + 14,
-            top:  tooltip.y - 12,
-            background: '#fff',
-            border: '1px solid var(--rule)',
-            borderRadius: 7,
-            padding: '7px 12px',
-            pointerEvents: 'none',
-            boxShadow: '0 4px 18px rgba(0,0,0,.14)',
-            zIndex: 20,
-            whiteSpace: 'nowrap',
-          }}>
-            <div style={{ fontFamily: 'system-ui', fontSize: 12, fontWeight: 700,
-                          color: 'var(--navy)', marginBottom: 2 }}>
-              {hovName}
-              {UT_IDS.has(hovIso!) && isUnion && (
-                <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--ink3)', marginLeft: 5 }}>
-                  (UT)
-                </span>
-              )}
-            </div>
-            <div style={{ fontFamily: 'system-ui', fontSize: 11, color: 'var(--ink3)' }}>
-              {hovCount > 0
-                ? `${hovCount} audit report${hovCount !== 1 ? 's' : ''} — click to view`
-                : 'No reports — click to browse all'}
-            </div>
+        {/* Legend */}
+        {!isUnion && (
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10,
+                        fontSize: 11, fontFamily: 'system-ui', color: 'var(--ink2)' }}>
+            {([
+              ['#1a3a6b','Has audit reports'],
+              ['#c8ddf0','No reports yet'],
+              ['#E0E2E4','Other jurisdiction'],
+            ] as [string,string][]).map(([c,l]) => (
+              <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ display: 'inline-block', width: 11, height: 11, background: c, borderRadius: 2 }}/>
+                {l}
+              </span>
+            ))}
           </div>
         )}
+
+        {/* SVG wrapper */}
+        <div style={{ position: 'relative', background: '#f4f7fc',
+                      borderRadius: 10, border: '1px solid var(--rule)', overflow: 'hidden' }}>
+          <svg
+            viewBox="0 0 1000 1000"
+            xmlns="http://www.w3.org/2000/svg"
+            style={{
+              width: '100%', height: 'auto', display: 'block',
+              cursor: isUnion ? 'pointer' : 'default',
+            }}
+            onMouseMove={onMove}
+            onMouseLeave={onSvgLeave}
+            onClick={isUnion ? () => window.location.href = '/audit-reports?jurisdiction=UNION' : undefined}
+          >
+            {(Object.keys(PATH_DATA) as string[]).map(iso => (
+              <path
+                key={iso}
+                id={iso}
+                d={PATH_DATA[iso]}
+                fill={fill(iso)}
+                stroke="#fff"
+                strokeWidth="0.8"
+                vectorEffect="non-scaling-stroke"
+                style={{
+                  cursor: (!isUnion && inJur(iso, jurisdiction)) ? 'pointer' : isUnion ? 'pointer' : 'default',
+                  transition: 'fill .12s',
+                }}
+                onClick={!isUnion ? (e) => {
+                  e.stopPropagation()
+                  if (inJur(iso, jurisdiction)) window.location.href = `/audit-reports?jurisdiction=${jurisdiction}&state=${iso}`
+                } : undefined}
+                onMouseEnter={e => onEnter(iso, e)}
+                onMouseLeave={onPathLeave}
+              />
+            ))}
+          </svg>
+
+          {/* Union overlay label */}
+          {isUnion && (
+            <div style={{
+              position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(255,255,255,.88)', borderRadius: 20, padding: '5px 16px',
+              fontFamily: 'system-ui', fontSize: 12, fontWeight: 600, color: 'var(--navy)',
+              boxShadow: '0 2px 8px rgba(0,0,0,.12)', pointerEvents: 'none', whiteSpace: 'nowrap',
+            }}>
+              {totalReports > 0
+                ? `${totalReports} Union audit report${totalReports !== 1 ? 's' : ''} — click to view all`
+                : 'No Union reports yet'}
+            </div>
+          )}
+
+          {/* Tooltip (non-union only) */}
+          {!isUnion && tooltip && hovName && (
+            <div style={{
+              position: 'absolute', left: tooltip.x + 14, top: tooltip.y - 12,
+              background: '#fff', border: '1px solid var(--rule)', borderRadius: 7,
+              padding: '7px 12px', pointerEvents: 'none',
+              boxShadow: '0 4px 18px rgba(0,0,0,.14)', zIndex: 20, whiteSpace: 'nowrap',
+            }}>
+              <div style={{ fontFamily: 'system-ui', fontSize: 12, fontWeight: 700,
+                            color: 'var(--navy)', marginBottom: 2 }}>
+                {hovName}
+              </div>
+              <div style={{ fontFamily: 'system-ui', fontSize: 11, color: 'var(--ink3)' }}>
+                {hovCount > 0
+                  ? `${hovCount} report${hovCount !== 1 ? 's' : ''} — click to view`
+                  : 'No reports — click to browse all'}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* ── Right: sidebar ────────────────────────────────────────────────── */}
+      <div style={{ flex: '0 0 270px', minWidth: 220 }}>
+        <div style={{ background: '#fff', border: '1px solid var(--rule)', borderRadius: 10, overflow: 'hidden' }}>
+
+          {/* Panel header */}
+          <div style={{ background: 'var(--navy)', padding: '11px 16px',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
+                           letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(255,255,255,.75)' }}>
+              {isUnion ? 'Union Reports' : jurisdiction === 'UT' ? 'All Union Territories' : `All ${jurisdiction === 'STATE' ? 'States' : 'Regions'}`}
+            </span>
+            {!isUnion && (
+              <span style={{ fontFamily: 'system-ui', fontSize: 10, color: 'rgba(255,255,255,.5)' }}>
+                {allRegions.filter(r => r.count > 0).length}/{allRegions.length} with reports
+              </span>
+            )}
+          </div>
+
+          {/* Content */}
+          {isUnion ? (
+            /* UNION: single row */
+            <Link
+              href="/audit-reports?jurisdiction=UNION"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 16px', textDecoration: 'none', background: '#fff',
+              }}
+            >
+              <span style={{ fontFamily: 'system-ui', fontSize: 13, fontWeight: 600,
+                             color: 'var(--navy)' }}>
+                Union (Central) Reports
+              </span>
+              {totalReports > 0 ? (
+                <span style={{ fontFamily: 'system-ui', fontSize: 12, fontWeight: 700,
+                               background: 'var(--navy)', color: '#fff',
+                               padding: '3px 10px', borderRadius: 10 }}>
+                  {totalReports}
+                </span>
+              ) : (
+                <span style={{ fontFamily: 'system-ui', fontSize: 11, color: 'var(--ink3)' }}>—</span>
+              )}
+            </Link>
+          ) : (
+            /* UT / STATE: full scrollable list */
+            <div style={{ maxHeight: 540, overflowY: 'auto' }}>
+              {allRegions.map(({ id, name, count }) => {
+                const isActive = id === activeIso
+                return (
+                  <Link
+                    key={id}
+                    ref={el => { rowRefs.current[id] = el }}
+                    href={`/audit-reports?jurisdiction=${jurisdiction}&state=${id}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '9px 16px', borderBottom: '1px solid var(--rule-lt)',
+                      textDecoration: 'none',
+                      background: isActive ? '#e8f0fb' : '#fff',
+                      transition: 'background .1s',
+                    }}
+                    onMouseEnter={() => setSideHov(id)}
+                    onMouseLeave={() => setSideHov(null)}
+                  >
+                    <span style={{
+                      fontFamily: 'system-ui', fontSize: 12,
+                      color: isActive ? 'var(--navy)' : count > 0 ? 'var(--ink)' : 'var(--ink3)',
+                      fontWeight: isActive || count > 0 ? 600 : 400,
+                      flex: 1, marginRight: 8, lineHeight: 1.35,
+                    }}>
+                      {name}
+                    </span>
+                    {count > 0 ? (
+                      <span style={{ fontFamily: 'system-ui', fontSize: 11, fontWeight: 700,
+                                     background: isActive ? 'var(--navy)' : 'var(--navy)',
+                                     color: '#fff', padding: '2px 9px', borderRadius: 10, flexShrink: 0 }}>
+                        {count}
+                      </span>
+                    ) : (
+                      <span style={{ fontFamily: 'system-ui', fontSize: 10,
+                                     color: 'var(--ink3)', flexShrink: 0 }}>—</span>
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
     </div>
   )
 }
-
 
 // ─── Path data (simplemaps, viewBox 0 0 1000 1000) ──────────────────────────
 const PATH_DATA: Record<string, string> = {
