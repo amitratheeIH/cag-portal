@@ -36,7 +36,8 @@ export default function SearchPage() {
   const [query,    setQuery]    = useState('')
   const [results,  setResults]  = useState<{ reports: ReportResult[]; sections: SectionResult[]; mode?: string } | null>(null)
   const [loading,  setLoading]  = useState(false)
-  const [filter,   setFilter]   = useState<'all'|'report'|'section'>('all')
+  const [filter,     setFilter]     = useState<'all'|'report'|'section'>('all')
+  const [searchMode, setSearchMode] = useState<'hybrid'|'text'|'semantic'>('hybrid')
   const [mode,     setMode]     = useState<'hybrid'|'text'|'semantic'>('hybrid')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -111,29 +112,62 @@ export default function SearchPage() {
         )}
       </div>
 
-      {/* Type filter tabs */}
-      <div style={{ display:'flex', gap:6, marginBottom:28 }}>
-        {([
-          ['All results', 'all'],
-          ['Reports only', 'report'],
-          ['Sections only', 'section'],
-        ] as [string, 'all'|'report'|'section'][]).map(([label, val]) => (
-          <button key={val} onClick={() => setFilter(val)} style={{
-            fontFamily:'system-ui', fontSize:12, fontWeight:600,
-            padding:'5px 16px', borderRadius:20, cursor:'pointer',
-            border:'1px solid',
-            borderColor: filter===val ? 'var(--navy)' : 'var(--rule)',
-            background:  filter===val ? 'var(--navy)' : '#fff',
-            color:       filter===val ? '#fff' : 'var(--ink2)',
-          }}>
-            {label}
-            {results && (
-              <span style={{ marginLeft:6, fontSize:10, opacity:.7 }}>
-                {val==='all' ? total : val==='report' ? results.reports.length : results.sections.length}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Search mode + result type rows */}
+      <div style={{ display:'flex', gap:16, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
+        {/* Search mode */}
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ fontFamily:'system-ui', fontSize:10.5, fontWeight:700,
+                         letterSpacing:'.6px', textTransform:'uppercase', color:'var(--ink3)' }}>
+            Mode
+          </span>
+          {([
+            ['Hybrid', 'hybrid', '✦'],
+            ['Text',   'text',   '🔤'],
+            ['Semantic','semantic','🧠'],
+          ] as [string,'hybrid'|'text'|'semantic',string][]).map(([label, val, icon]) => (
+            <button key={val} onClick={() => setSearchMode(val)} style={{
+              fontFamily:'system-ui', fontSize:11.5, fontWeight:600,
+              padding:'4px 12px', borderRadius:20, cursor:'pointer',
+              display:'flex', alignItems:'center', gap:4,
+              border:'1px solid',
+              borderColor: searchMode===val ? 'var(--navy)' : 'var(--rule)',
+              background:  searchMode===val ? 'var(--navy)' : '#fff',
+              color:       searchMode===val ? '#fff' : 'var(--ink2)',
+            }}>
+              <span>{icon}</span> {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Divider */}
+        <div style={{ width:1, height:20, background:'var(--rule)' }}/>
+
+        {/* Result type */}
+        <div style={{ display:'flex', gap:6 }}>
+          {([
+            ['All', 'all'],
+            ['Reports', 'report'],
+            ['Sections', 'section'],
+          ] as [string, 'all'|'report'|'section'][]).map(([label, val]) => (
+            <button key={val} onClick={() => setFilter(val)} style={{
+              fontFamily:'system-ui', fontSize:11.5, fontWeight:600,
+              padding:'4px 12px', borderRadius:20, cursor:'pointer',
+              border:'1px solid',
+              borderColor: filter===val ? 'var(--navy)' : 'var(--rule)',
+              background:  filter===val ? '#fff' : '#fff',
+              color:       filter===val ? 'var(--navy)' : 'var(--ink3)',
+              fontStyle:   filter===val ? 'normal' : 'normal',
+              textDecoration: filter===val ? 'underline' : 'none',
+            }}>
+              {label}
+              {results && (
+                <span style={{ marginLeft:4, fontSize:10, opacity:.7 }}>
+                  {val==='all' ? total : val==='report' ? results.reports.length : results.sections.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Search mode */}
@@ -190,19 +224,7 @@ export default function SearchPage() {
           <div style={{ fontFamily:'system-ui', fontSize:12, color:'var(--ink3)',
                         marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
             <span>{total} result{total!==1?'s':''} for <strong style={{color:'var(--ink)'}}>"{query}"</strong></span>
-            {results.mode === 'hybrid' && (
-              <span style={{ fontFamily:'system-ui', fontSize:10, fontWeight:700,
-                             background:'#e8f4fd', color:'#1a6b9a', padding:'2px 8px',
-                             borderRadius:10, border:'1px solid #b8ddf0' }}>
-                ✦ Semantic + keyword
-              </span>
-            )}
-            {results.mode === 'keyword' && (
-              <span style={{ fontFamily:'system-ui', fontSize:10, color:'var(--ink3)',
-                             background:'#f4f6f8', padding:'2px 8px', borderRadius:10 }}>
-                Keyword search
-              </span>
-            )}
+
           </div>
 
           {/* Report results */}

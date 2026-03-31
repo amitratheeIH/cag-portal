@@ -1,51 +1,36 @@
 // src/app/api/search/route.ts
-// Hybrid search: keyword ($search) + semantic ($vectorSearch) merged via RRF.
+// Hybrid search: keyword (regex always + Atlas Search if available) +
+// semantic ($vectorSearch) merged via RRF.
 //
-// Indexes (db: cag_audit):
-//   block_search       — Atlas Search text index on block_vectors
-//   block_vector_index — Atlas Vector Search on block_vectors.embedding (1024 dims, Cohere)
-//   report_search      — Atlas Search text index on catalog_index
-//
-// Requires: COHERE_API_KEY in Vercel environment variables.
-// Falls back to keyword-only if key missing or embedding fails.
+// Strategy: ALWAYS run regex as baseline. Atlas Search and vector search
+// add ranking quality on top. This way results always appear even if
+// Atlas Search indexes have missing fields or aren't fully built.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/mongodb'
 
-const COHERE_EMBED_MODEL = 'embed-english-v3.0'   // 1024 dims
-const VECTOR_DIMS        = 1024
-
-// ── Embed query via Cohere ────────────────────────────────────────────────────
-// input_type MUST be "search_query" at query time
-// (documents were indexed with "search_document")
+// ── Cohere query embedding (1024 dims) ────────────────────────────────────────
 async function embedQuery(text: string): Promise<number[] | null> {
   const key = process.env.COHERE_API_KEY
   if (!key) return null
   try {
     const res = await fetch('https://api.cohere.ai/v1/embed', {
-      method:  'POST',
+      method: 'POST',
       headers: {
-        'Content-Type':  'application/json',
-        Authorization:   `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
         'Cohere-Version': '2022-12-06',
       },
       body: JSON.stringify({
-        model:      COHERE_EMBED_MODEL,
-        texts:      [text],
-        input_type: 'search_query',   // ← critical: different from indexing
+        model: 'embed-english-v3.0',
+        texts: [text],
+        input_type: 'search_query',
       }),
     })
-    if (!res.ok) {
-      const err = await res.text()
-      console.error('Cohere embed error:', res.status, err)
-      return null
-    }
+    if (!res.ok) return null
     const data = await res.json() as { embeddings: number[][] }
     return data.embeddings[0] ?? null
-  } catch (e) {
-    console.error('Cohere embed exception:', e)
-    return null
-  }
+  } catch { return null }
 }
 
 // ── RRF merge ─────────────────────────────────────────────────────────────────
@@ -60,7 +45,7 @@ function rrf<T extends { id: string }>(lists: T[][], k = 60): (T & { rrf_score: 
   }
   return Object.entries(scores)
     .sort(([, a], [, b]) => b - a)
-    .map(([id, rrf_score]) => ({ ...docs[id], rrf_score }))
+    .map(([id, score]) => ({ ...docs[id], rrf_score: score }))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -89,8 +74,8 @@ function unitLabel(unit_id: string): string {
   const m = last.match(/^([A-Z]+)(\d+)$/)
   if (!m) return last || unit_id
   const names: Record<string, string> = {
-    CH:'Chapter', SEC:'Section', PRE:'Preface',
-    ES:'Executive Summary', ANX:'Annexure', APP:'Appendix', INT:'Introduction',
+    CH: 'Chapter', SEC: 'Section', PRE: 'Preface',
+    ES: 'Executive Summary', ANX: 'Annexure', APP: 'Appendix', INT: 'Introduction',
   }
   return (names[m[1]] || m[1]) + ' ' + parseInt(m[2])
 }
@@ -99,6 +84,8 @@ function unitLabel(unit_id: string): string {
 export async function GET(req: NextRequest) {
   const q    = req.nextUrl.searchParams.get('q')?.trim() ?? ''
   const type = req.nextUrl.searchParams.get('type') ?? 'all'
+  const mode = req.nextUrl.searchParams.get('mode') ?? 'hybrid'
+  // mode: 'hybrid' = keyword+vector, 'text' = keyword only, 'semantic' = vector only
 
   if (q.length < 2) {
     return NextResponse.json({ reports: [], sections: [], query: q, mode: 'empty' })
@@ -106,76 +93,124 @@ export async function GET(req: NextRequest) {
 
   const db = await getDb()
 
-  // ── 1. Report keyword search ────────────────────────────────────────────
+  // ── 1. Reports: ALWAYS regex + try Atlas Search, merge both ─────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let reportHits: any[] = []
   if (type !== 'section') {
+
+    // 1a. Regex — always runs, covers all possible field structures.
+    // Searches nested title.en/summary.en AND flat title/summary strings
+    // and also pulls reports whose sections mention the query (join via block_vectors).
+    const regexHits = await db.collection('catalog_index').find(
+      {
+        portal_section: 'audit_reports',
+        $or: [
+          { 'title.en':    { $regex: q, $options: 'i' } },  // {en:"..."} object
+          { 'title':       { $regex: q, $options: 'i' } },  // plain string
+          { 'summary.en':  { $regex: q, $options: 'i' } },
+          { 'summary':     { $regex: q, $options: 'i' } },
+          { 'topics':      { $regex: q, $options: 'i' } },
+          { 'search_text': { $regex: q, $options: 'i' } },  // flat keyword bag
+        ]
+      },
+      { projection: { product_id:1, title:1, year:1, jurisdiction:1,
+                      summary:1, report_number:1, state_id:1 } }
+    ).limit(20).toArray()
+
+    // Also surface reports whose block content mentions the query
+    // (catches cases where title/summary don't match but sections do)
+    const blockProductIds = await db.collection('block_vectors').distinct(
+      'product_id',
+      { text_snippet: { $regex: q, $options: 'i' } }
+    )
+    const existingIds = new Set(regexHits.map((r: Record<string,unknown>) => String(r.product_id)))
+    const extraReports = blockProductIds.length > 0
+      ? await db.collection('catalog_index').find(
+          { product_id: { $in: blockProductIds.filter((id: string) => !existingIds.has(id)) },
+            portal_section: 'audit_reports' },
+          { projection: { product_id:1, title:1, year:1, jurisdiction:1,
+                          summary:1, report_number:1, state_id:1 } }
+        ).limit(10).toArray()
+      : []
+
+    // 1b. Atlas Search — adds relevance ranking, may return 0 if fields not indexed
+    let atlasHits: typeof regexHits = []
     try {
-      reportHits = await db.collection('catalog_index').aggregate([
+      atlasHits = await db.collection('catalog_index').aggregate([
         { $search: {
             index: 'report_search',
             compound: { should: [
-              // title and summary are stored as {en: "..."} objects — query the nested en field
-              { text: { query: q, path: 'title.en',   score: { boost: { value: 4 } } } },
-              { text: { query: q, path: 'summary.en', score: { boost: { value: 2 } } } },
-              { text: { query: q, path: 'topics',     score: { boost: { value: 1 } } } },
+              { text: { query: q, path: 'title.en',    score: { boost: { value: 4 } } } },
+              { text: { query: q, path: 'summary.en',  score: { boost: { value: 2 } } } },
+              { text: { query: q, path: 'search_text', score: { boost: { value: 2 } } } },
+              { text: { query: q, path: 'topics',      score: { boost: { value: 1 } } } },
             ]},
           },
         },
         { $match: { portal_section: 'audit_reports' } },
-        { $limit: 10 },
+        { $limit: 15 },
         { $project: { product_id:1, title:1, year:1, jurisdiction:1,
                        summary:1, report_number:1, state_id:1 } },
-      ]).toArray()
-    } catch {
-      // Atlas Search not ready — regex fallback
-      reportHits = await db.collection('catalog_index').find(
-        { portal_section: 'audit_reports',
-          $or: [{ 'title.en':   { $regex: q, $options: 'i' } },
-                { 'summary.en': { $regex: q, $options: 'i' } }] },
-        { projection: { product_id:1, title:1, year:1, jurisdiction:1,
-                        summary:1, report_number:1, state_id:1 } }
-      ).limit(10).toArray()
+      ]).toArray() as typeof regexHits
+    } catch { /* Atlas Search not available or misconfigured — regex covers us */ }
+
+    // Merge: Atlas first (best ranked), then regex title/summary matches,
+    // then reports surfaced from block content
+    const seen = new Set<string>()
+    for (const r of [...atlasHits, ...regexHits, ...extraReports]) {
+      const id = String(r.product_id)
+      if (!seen.has(id)) { seen.add(id); reportHits.push(r) }
     }
+    reportHits = reportHits.slice(0, 15)
   }
 
-  // ── 2. Block keyword search ─────────────────────────────────────────────
+  // ── 2. Blocks: ALWAYS regex + try Atlas Search keyword ──────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let keywordBlocks: any[] = []
   if (type !== 'report') {
-    try {
-      keywordBlocks = await db.collection('block_vectors').aggregate([
-        { $search: { index: 'block_search',
-                     text: { query: q, path: 'text_snippet' } } },
-        { $limit: 50 },
-        { $project: { product_id:1, unit_id:1, block_type:1,
-                       para_number:1, text_snippet:1 } },
-      ]).toArray()
-    } catch {
-      keywordBlocks = await db.collection('block_vectors').find(
-        { text_snippet: { $regex: q, $options: 'i' } },
-        { projection: { product_id:1, unit_id:1, block_type:1,
-                        para_number:1, text_snippet:1 } }
-      ).limit(50).toArray()
+
+    // 2a. Regex on text_snippet — skip in semantic-only mode
+    const regexBlocks = mode !== 'semantic' ? await db.collection('block_vectors').find(
+      { text_snippet: { $regex: q.split(/\s+/).join('|'), $options: 'i' } },
+      { projection: { product_id:1, unit_id:1, block_type:1, para_number:1, text_snippet:1 } }
+    ).limit(60).toArray() : []
+
+    // 2b. Atlas Search keyword — better ranking (skip in semantic mode)
+    let atlasBlocks: typeof regexBlocks = []
+    if (mode !== 'semantic') {
+      try {
+        atlasBlocks = await db.collection('block_vectors').aggregate([
+          { $search: { index: 'block_search',
+                       text: { query: q, path: 'text_snippet' } } },
+          { $limit: 60 },
+          { $project: { product_id:1, unit_id:1, block_type:1,
+                         para_number:1, text_snippet:1 } },
+        ]).toArray() as typeof regexBlocks
+      } catch { /* use regex only */ }
     }
-    // Normalise id to unit_id for RRF merging
-    keywordBlocks = keywordBlocks.map((b: Record<string,unknown>) => ({ ...b, id: String(b.unit_id) }))
+
+    // Merge
+    const seen = new Set<string>()
+    for (const b of [...atlasBlocks, ...regexBlocks]) {
+      const id = String(b.unit_id)
+      if (!seen.has(id)) { seen.add(id); keywordBlocks.push({ ...b, id }) }
+    }
   }
 
-  // ── 3. Block vector (semantic) search ───────────────────────────────────
+  // ── 3. Vector search ─────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let vectorBlocks: any[] = []
-  if (type !== 'report') {
+  if (type !== 'report' && mode !== 'text') {
     const queryVec = await embedQuery(q)
-    if (queryVec && queryVec.length === VECTOR_DIMS) {
+    if (queryVec) {
       try {
         vectorBlocks = await db.collection('block_vectors').aggregate([
           { $vectorSearch: {
               index:         'block_vector_index',
               path:          'embedding',
               queryVector:   queryVec,
-              numCandidates: 200,   // search wider, return fewer
-              limit:         50,
+              numCandidates: 300,
+              limit:         60,
             },
           },
           { $project: { product_id:1, unit_id:1, block_type:1,
@@ -183,21 +218,17 @@ export async function GET(req: NextRequest) {
                          vector_score: { $meta: 'vectorSearchScore' } } },
         ]).toArray()
         vectorBlocks = vectorBlocks.map((b: Record<string,unknown>) => ({ ...b, id: String(b.unit_id) }))
-      } catch (e) {
-        console.error('$vectorSearch failed:', e)
-      }
-    } else if (queryVec && queryVec.length !== VECTOR_DIMS) {
-      console.error(`Embedding dim mismatch: expected ${VECTOR_DIMS}, got ${queryVec.length}`)
+      } catch (e) { console.error('vectorSearch failed:', e) }
     }
   }
 
-  // ── 4. Merge blocks via RRF ──────────────────────────────────────────────
+  // ── 4. RRF merge of block results ────────────────────────────────────────
   const merged = rrf([keywordBlocks, vectorBlocks])
 
-  // One result per unit_id (highest-scored block per section)
-  const seen = new Set<string>()
+  // One result per unit_id
+  const seenUnits = new Set<string>()
   const topSections = merged
-    .filter(b => { if (seen.has(b.unit_id)) return false; seen.add(b.unit_id); return true })
+    .filter(b => { if (seenUnits.has(b.unit_id)) return false; seenUnits.add(b.unit_id); return true })
     .slice(0, 20)
 
   // ── 5. Enrich sections with report metadata ──────────────────────────────
@@ -208,15 +239,13 @@ export async function GET(req: NextRequest) {
       .find({ product_id: { $in: productIds } },
             { projection: { product_id:1, title:1, year:1, jurisdiction:1 } })
       .toArray()
-    for (const m of metas) reportMetaMap[String((m as unknown as { product_id:string }).product_id)] = m
+    for (const m of metas)
+      reportMetaMap[String((m as unknown as { product_id: string }).product_id)] = m
   }
-
-  const usedVector = vectorBlocks.length > 0
 
   return NextResponse.json({
     query:   q,
-    mode:    usedVector ? 'hybrid' : 'keyword',
-
+    mode:    vectorBlocks.length > 0 ? 'hybrid' : 'keyword',
     reports: reportHits.map(r => ({
       type:          'report',
       product_id:    r.product_id,
@@ -228,7 +257,6 @@ export async function GET(req: NextRequest) {
       state_id:      r.state_id,
       href:          `/report/${r.product_id}`,
     })),
-
     sections: topSections.map(b => ({
       type:        'section',
       product_id:  b.product_id,
