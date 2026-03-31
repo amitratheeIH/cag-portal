@@ -134,7 +134,8 @@ export default async function AuditReportsListPage({ searchParams }: { searchPar
   ])
 
   // Convert to maps: value → count
-  const toMap = (rows: { _id: unknown; count: number }[]) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toMap = (rows: any[]) => {
     const m: Record<string, number> = {}
     for (const r of rows) if (r._id != null) m[String(r._id)] = r.count
     return m
