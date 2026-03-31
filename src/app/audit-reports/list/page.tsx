@@ -1,242 +1,359 @@
 import { getDb } from '@/lib/mongodb'
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import FiltersPanel, { type FilterDef } from '@/components/audit/FiltersPanel'
 
-function ml(obj: Record<string,string>|string|null|undefined): string {
+export const metadata: Metadata = { title: 'Audit Reports — CAG Digital Repository' }
+
+const JUR_LABELS: Record<string, string> = {
+  UNION: 'Union', STATE: 'State', UT: 'Union Territory', LG: 'Local Body',
+}
+
+// Maps URL param to MongoDB field + decode logic
+const FILTER_FIELD: Record<string, string> = {
+  year:        'year',
+  audit_type:  'audit_type',    // array field — use $elemMatch / $in
+  sector:      'report_sector', // array field
+  language:    'languages',     // array field
+}
+
+function ml(obj: Record<string, string> | string | null | undefined): string {
   if (!obj) return ''
   if (typeof obj === 'string') return obj
   return obj.en || Object.values(obj)[0] || ''
 }
 
-const JUR_LABELS: Record<string,string> = {
-  UNION: 'Union', STATE: 'State', UT: 'Union Territory', LG: 'Local Body',
+type SP = {
+  jurisdiction?: string; state?: string; topic?: string; year?: string | string[]
+  audit_type?: string | string[]; sector?: string | string[]; language?: string | string[]
 }
 
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: { jurisdiction?: string; state?: string; topic?: string }
-}): Promise<Metadata> {
+function parseFilterParam(val: string | string[] | undefined): { inc: string[]; exc: string[] } {
+  const vals = val ? (Array.isArray(val) ? val : [val]) : []
+  const inc = vals.filter(v => !v.startsWith('-'))
+  const exc = vals.filter(v => v.startsWith('-')).map(v => v.slice(1))
+  return { inc, exc }
+}
+
+export default async function AuditReportsListPage({ searchParams }: { searchParams: SP }) {
+  const db  = await getDb()
   const jur = searchParams.jurisdiction
-  const label = jur ? JUR_LABELS[jur] || jur : 'All'
-  return { title: `${label} Audit Reports — CAG Digital Repository` }
-}
 
-export default async function AuditReportsPage({
-  searchParams,
-}: {
-  searchParams: { jurisdiction?: string; state?: string; year?: string; topic?: string }
-}) {
-  const db = await getDb()
+  // ── Build MongoDB filter ────────────────────────────────────────────────
+  const filter: Record<string, unknown> = { portal_section: 'audit_reports' }
+  if (jur)                   filter.jurisdiction = jur
+  if (searchParams.state)    filter.state_id     = searchParams.state
 
-  // Build filter
-  const filter: Record<string,unknown> = { portal_section: 'audit_reports' }
-  if (searchParams.jurisdiction) filter.jurisdiction = searchParams.jurisdiction
-  if (searchParams.state)        filter.state_id     = searchParams.state
-  if (searchParams.year)         filter.year         = parseInt(searchParams.year)
+  // Topic filter (include sub-topics of parent)
   if (searchParams.topic) {
-    // If a parent topic is clicked, also match all its sub-topics
-    // so reports tagged with sub-topics appear under the parent
-    const db2 = await getDb()
-    const subTopics = await db2.collection('taxonomy_topics')
+    const subTopics = await db.collection('taxonomy_topics')
       .distinct('id', { parent_id: searchParams.topic, level: 'sub_topic' })
     const topicIds = subTopics.length > 0
-      ? [searchParams.topic, ...subTopics]   // parent + all subs
-      : [searchParams.topic]                 // leaf topic (sub_topic itself)
+      ? [searchParams.topic, ...subTopics] : [searchParams.topic]
     filter.topics = { $in: topicIds }
   }
 
+  // Apply include/exclude for each filter param
+  function applyArrayFilter(field: string, param: string | string[] | undefined) {
+    const { inc, exc } = parseFilterParam(param)
+    const conditions: unknown[] = []
+    if (inc.length > 0) conditions.push({ [field]: { $in: inc } })
+    if (exc.length > 0) conditions.push({ [field]: { $nin: exc } })
+    if (conditions.length === 1) Object.assign(filter, conditions[0])
+    else if (conditions.length > 1) {
+      const existing = (filter.$and as unknown[]) || []
+      filter.$and = [...existing, ...conditions]
+    }
+  }
+
+  function applyScalarFilter(field: string, param: string | string[] | undefined) {
+    const { inc, exc } = parseFilterParam(param)
+    if (inc.length > 0) filter[field] = inc.length === 1 ? Number(inc[0]) || inc[0] : { $in: inc.map(v => Number(v) || v) }
+    if (exc.length > 0) filter[field] = { ...(filter[field] as object || {}), $nin: exc.map(v => Number(v) || v) }
+  }
+
+  applyScalarFilter('year',       searchParams.year)
+  applyArrayFilter('audit_type',  searchParams.audit_type)
+  applyArrayFilter('report_sector', searchParams.sector)
+  applyArrayFilter('languages',   searchParams.language)
+
+  // ── Fetch matching reports ──────────────────────────────────────────────
   const docs = await db
     .collection('catalog_index')
     .find(filter, {
       projection: {
-        product_id: 1, title: 1, year: 1,
-        jurisdiction: 1, report_number: 1, summary: 1,
-        state_id: 1, portal_section: 1,
+        product_id: 1, title: 1, year: 1, jurisdiction: 1,
+        report_number: 1, summary: 1, state_id: 1, audit_type: 1,
+        report_sector: 1, topics: 1, tabling_dates: 1,
       },
     })
-    .sort({ year: -1 })
-    .limit(100)
+    .sort({ year: -1, 'report_number.number': 1 })
+    .limit(200)
     .toArray()
 
-  // Get available years for filter
-  const years = await db
-    .collection('catalog_index')
-    .distinct('year', { portal_section: 'audit_reports' })
-  years.sort((a, b) => b - a)
+  const totalCount = docs.length
 
-  const jur        = searchParams.jurisdiction
-  const stateId    = searchParams.state
-  const yearFilter = searchParams.year
-  const topicFilter = searchParams.topic
+  // ── Fetch filter options from DB (counts within current jur) ────────────
+  const baseMatch: Record<string, unknown> = { portal_section: 'audit_reports' }
+  if (jur) baseMatch.jurisdiction = jur
 
-  // Heading
-  let heading = 'Audit Reports'
-  if (jur)          heading = (JUR_LABELS[jur] || jur) + ' Audit Reports'
-  if (topicFilter)  heading = 'Audit Reports — Topic'
+  const [yearAgg, auditTypeAgg, sectorAgg, langAgg] = await Promise.all([
+    db.collection('catalog_index').aggregate([
+      { $match: baseMatch },
+      { $group: { _id: '$year', count: { $sum: 1 } } },
+      { $sort: { _id: -1 } },
+    ]).toArray(),
+    db.collection('catalog_index').aggregate([
+      { $match: { ...baseMatch, audit_type: { $exists: true } } },
+      { $unwind: '$audit_type' },
+      { $group: { _id: '$audit_type', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]).toArray(),
+    db.collection('catalog_index').aggregate([
+      { $match: { ...baseMatch, report_sector: { $exists: true } } },
+      { $unwind: '$report_sector' },
+      { $group: { _id: '$report_sector', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]).toArray(),
+    db.collection('catalog_index').aggregate([
+      { $match: { ...baseMatch, languages: { $exists: true } } },
+      { $unwind: '$languages' },
+      { $group: { _id: '$languages', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]).toArray(),
+  ])
 
-  // Breadcrumb
-  const crumbs = [
-    { label: 'Home', href: '/' },
-    { label: 'Audit Reports', href: '/audit-reports' },
-    ...(jur         ? [{ label: JUR_LABELS[jur] || jur, href: '/audit-reports/list?jurisdiction=' + jur }] : []),
-    ...(topicFilter ? [{ label: 'Topic filter', href: '/audit-reports/list?topic=' + topicFilter }] : []),
+  // Get labels from taxonomy collections
+  const [atLabels, secLabels] = await Promise.all([
+    db.collection('taxonomy_afc').find({}, { projection: { id: 1, label: 1 } }).toArray()
+      .then(() => db.collection('taxonomy_types') // fallback handled below
+        .find({}, { projection: { id: 1, label: 1 } }).toArray()
+        .catch(() => [])),
+    db.collection('taxonomy_sectors')
+      .find({}, { projection: { id: 1, label: 1 } }).toArray()
+      .catch(() => []),
+  ])
+  // Use hardcoded fallbacks for audit_type if taxonomy_types not available
+  const AT_LABELS: Record<string, string> = {
+    'ATYPE-COMPLIANCE': 'Compliance Audit',   'ATYPE-PERFORMANCE': 'Performance Audit',
+    'ATYPE-FINANCIAL':  'Financial Audit',    'ATYPE-IT-AUDIT':    'IT Audit',
+    'ATYPE-CERTIFICATION': 'Certification',   'ATYPE-ENVIRONMENTAL': 'Environmental Audit',
+  }
+  const secLabelMap: Record<string, string> = {}
+  for (const e of secLabels as { id?: string; label?: { en?: string } }[]) {
+    if (e.id) secLabelMap[e.id] = e.label?.en || e.id
+  }
+  // Fallback: load from taxonomy_report_sector if available
+  const sectorEntries = await db.collection('taxonomy_report_sector')
+    .find({}, { projection: { id: 1, label: 1 } }).toArray().catch(() => [])
+  for (const e of sectorEntries as { id?: string; label?: { en?: string } }[]) {
+    if (e.id) secLabelMap[e.id] = e.label?.en || e.id
+  }
+
+  const LANG_NAMES: Record<string, string> = {
+    en: 'English', hi: 'Hindi', mr: 'Marathi', ta: 'Tamil',
+    te: 'Telugu', kn: 'Kannada', ml: 'Malayalam', gu: 'Gujarati',
+    pa: 'Punjabi', bn: 'Bengali', or: 'Odia', as: 'Assamese',
+  }
+
+  // Build FilterDef array
+  const filterDefs: FilterDef[] = [
+    {
+      key: 'year', label: 'Year',
+      options: yearAgg.map(r => ({ value: String(r._id), label: String(r._id), count: r.count })),
+      maxShown: 8,
+    },
+    ...(auditTypeAgg.length > 0 ? [{
+      key: 'audit_type', label: 'Audit Type',
+      options: auditTypeAgg.map(r => ({
+        value: String(r._id),
+        label: AT_LABELS[String(r._id)] || String(r._id),
+        count: r.count,
+      })),
+    }] : []),
+    ...(sectorAgg.length > 0 ? [{
+      key: 'sector', label: 'Sector',
+      options: sectorAgg.map(r => ({
+        value: String(r._id),
+        label: secLabelMap[String(r._id)] || String(r._id).replace(/^SECT-\w+-?/, '').replace(/-/g,' '),
+        count: r.count,
+      })),
+      maxShown: 6,
+    }] : []),
+    ...(langAgg.length > 1 ? [{
+      key: 'language', label: 'Language',
+      options: langAgg.map(r => ({
+        value: String(r._id),
+        label: LANG_NAMES[String(r._id)] || String(r._id).toUpperCase(),
+        count: r.count,
+      })),
+    }] : []),
+  ]
+
+  // ── Heading ─────────────────────────────────────────────────────────────
+  const heading = jur
+    ? (JUR_LABELS[jur] || jur) + ' Audit Reports'
+    : 'All Audit Reports'
+
+  // ── Tabs ────────────────────────────────────────────────────────────────
+  const tabs = [
+    { label: 'All',             href: '/audit-reports/list' },
+    { label: 'Union',           href: '/audit-reports/list?jurisdiction=UNION' },
+    { label: 'State',           href: '/audit-reports/list?jurisdiction=STATE' },
+    { label: 'Union Territory', href: '/audit-reports/list?jurisdiction=UT' },
+    { label: 'Local Body',      href: '/audit-reports/list?jurisdiction=LG' },
   ]
 
   return (
-    <main id="main-content" style={{ maxWidth:'1100px', margin:'0 auto', padding:'36px 20px 60px' }}>
+    <main id="main-content" style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 20px 60px' }}>
 
       {/* Breadcrumb */}
-      <div style={{ fontFamily:'system-ui', fontSize:'10px', fontWeight:700, letterSpacing:'1.2px', textTransform:'uppercase', color:'var(--ink3)', marginBottom:'20px', display:'flex', gap:'6px', flexWrap:'wrap' }}>
-        {crumbs.map((c, i) => (
-          <span key={c.href} style={{ display:'flex', gap:'6px' }}>
-            {i > 0 && <span style={{ color:'var(--rule)' }}>›</span>}
-            {i < crumbs.length - 1
-              ? <Link href={c.href} style={{ color:'var(--ink3)', textDecoration:'none' }}>{c.label}</Link>
-              : <span>{c.label}</span>
-            }
-          </span>
-        ))}
+      <div style={{ fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
+                    letterSpacing: '1.2px', textTransform: 'uppercase',
+                    color: 'var(--ink3)', marginBottom: 20, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <Link href="/" style={{ color: 'var(--ink3)', textDecoration: 'none' }}>Home</Link>
+        <span>›</span>
+        <Link href="/audit-reports" style={{ color: 'var(--ink3)', textDecoration: 'none' }}>Audit Reports</Link>
+        <span>›</span>
+        <span>{heading}</span>
       </div>
 
-      {/* Page header */}
-      <div style={{ marginBottom:'28px', display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'16px', flexWrap:'wrap' }}>
-        <div>
-          <h1 style={{ fontFamily:'"EB Garamond","Times New Roman",serif', fontSize:'32px', fontWeight:700, color:'var(--navy)', margin:'0 0 6px' }}>
-            {heading}
-          </h1>
-          <p style={{ fontFamily:'system-ui', fontSize:'13px', color:'var(--ink3)', margin:0 }}>
-            {docs.length} report{docs.length !== 1 ? 's' : ''}
-            {jur ? ` · ${JUR_LABELS[jur] || jur}` : ''}
-          </p>
-        </div>
-        {/* Map view link — will go to /audit-reports/map */}
-        <Link href={`/audit-reports/map${jur ? `?jurisdiction=${jur}` : ''}`}
-          style={{
-            display:'inline-flex', alignItems:'center', gap:'7px',
-            fontFamily:'system-ui', fontSize:'12px', fontWeight:600,
-            color:'var(--navy)', background:'var(--navy-lt)',
-            padding:'8px 16px', borderRadius:'20px', textDecoration:'none',
-            border:'1px solid rgba(26,58,107,.2)', flexShrink:0,
+      <h1 style={{ fontFamily: '"EB Garamond","Times New Roman",serif',
+                   fontSize: 28, fontWeight: 700, color: 'var(--navy)', margin: '0 0 20px' }}>
+        {heading}
+      </h1>
+
+      {/* Jurisdiction tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 24, flexWrap: 'wrap' }}>
+        {tabs.map(t => {
+          const active = jur
+            ? t.href === '/audit-reports/list?jurisdiction=' + jur
+            : t.href === '/audit-reports/list'
+          return (
+            <Link key={t.href} href={t.href} style={{
+              fontFamily: 'system-ui', fontSize: 12, fontWeight: 600,
+              padding: '5px 16px', borderRadius: 20, textDecoration: 'none',
+              border: '1px solid',
+              borderColor: active ? 'var(--navy)' : 'var(--rule)',
+              background:  active ? 'var(--navy)' : '#fff',
+              color:       active ? '#fff' : 'var(--ink2)',
+            }}>
+              {t.label}
+            </Link>
+          )
+        })}
+        {jur && (
+          <Link href={'/audit-reports/map?jurisdiction=' + jur} style={{
+            fontFamily: 'system-ui', fontSize: 12, fontWeight: 600,
+            padding: '5px 16px', borderRadius: 20, textDecoration: 'none',
+            border: '1px solid var(--rule)', background: '#fff', color: 'var(--ink2)',
+            display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto',
           }}>
-          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13 6-3m-6 3V7m6 10 4.553 2.276A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-.553-.894L15 4m0 13V4m0 0L9 7"/>
-          </svg>
-          Browse by Map
-        </Link>
-      </div>
-
-      {/* Filter row */}
-      <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'28px', alignItems:'center' }}>
-        {/* Jurisdiction chips */}
-        <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
-          {[
-            { label:'All',             href:'/audit-reports/list' },
-            { label:'Union',           href:'/audit-reports/list?jurisdiction=UNION' },
-            { label:'State',           href:'/audit-reports/list?jurisdiction=STATE' },
-            { label:'Union Territory', href:'/audit-reports/list?jurisdiction=UT' },
-            { label:'Local Body',      href:'/audit-reports/list?jurisdiction=LG' },
-          ].map(({ label, href }) => {
-            const active = jur ? href === `/audit-reports/list?jurisdiction=${jur}` : href === '/audit-reports/list'
-            return (
-              <Link key={label} href={href} style={{
-                fontFamily:'system-ui', fontSize:'12px', fontWeight:600,
-                padding:'5px 14px', borderRadius:'20px', textDecoration:'none',
-                border:'1px solid',
-                borderColor: active ? 'var(--navy)' : 'var(--rule)',
-                background:  active ? 'var(--navy)' : '#fff',
-                color:       active ? '#fff'       : 'var(--ink2)',
-              }}>{label}</Link>
-            )
-          })}
-        </div>
-
-        {/* Year filter */}
-        {years.length > 0 && (
-          <div style={{ marginLeft:'auto', display:'flex', gap:'6px', alignItems:'center' }}>
-            <span style={{ fontFamily:'system-ui', fontSize:'11px', color:'var(--ink3)' }}>Year:</span>
-            <Link href={jur ? `/audit-reports?jurisdiction=${jur}` : '/audit-reports'}
-              style={{
-                fontFamily:'system-ui', fontSize:'12px', fontWeight:600, padding:'4px 10px',
-                borderRadius:'12px', textDecoration:'none', border:'1px solid',
-                borderColor: !yearFilter ? 'var(--navy)' : 'var(--rule)',
-                background:  !yearFilter ? 'var(--navy)' : '#fff',
-                color:       !yearFilter ? '#fff'        : 'var(--ink2)',
-              }}>All</Link>
-            {years.slice(0, 8).map(y => {
-              const yStr = y.toString()
-              const href = `/audit-reports/list?${jur ? `jurisdiction=${jur}&` : ''}year=${yStr}`
-              const active = yearFilter === yStr
-              return (
-                <Link key={yStr} href={href} style={{
-                  fontFamily:'system-ui', fontSize:'12px', fontWeight:600, padding:'4px 10px',
-                  borderRadius:'12px', textDecoration:'none', border:'1px solid',
-                  borderColor: active ? 'var(--saffron)' : 'var(--rule)',
-                  background:  active ? 'var(--saffron)' : '#fff',
-                  color:       active ? '#fff'           : 'var(--ink2)',
-                }}>{yStr}</Link>
-              )
-            })}
-          </div>
+            🗾 Map view
+          </Link>
         )}
       </div>
 
-      {/* Report list */}
-      {docs.length === 0 ? (
-        <div style={{ fontFamily:'system-ui', fontSize:'14px', color:'var(--ink3)', padding:'60px 0', textAlign:'center' }}>
-          No reports found.
+      {/* Two-column: filters + results */}
+      <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
+
+        {/* Filters sidebar */}
+        <FiltersPanel filters={filterDefs} totalCount={totalCount} />
+
+        {/* Results */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {docs.length === 0 ? (
+            <div style={{ padding: '32px 24px', textAlign: 'center', borderRadius: 10,
+                          border: '1px solid var(--rule)', fontFamily: 'system-ui',
+                          fontSize: 13, color: 'var(--ink3)' }}>
+              No reports match the current filters.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {docs.map(doc => {
+                const title = ml(doc.title as Record<string,string>)
+                const rn    = doc.report_number as { number: number; year: number } | undefined
+                const tdate = (doc.tabling_dates as Record<string,string> | undefined)?.lower_house
+                const atypes = (doc.audit_type as string[] | undefined) || []
+                const sectors = (doc.report_sector as string[] | undefined) || []
+
+                return (
+                  <Link key={doc.product_id} href={'/report/' + doc.product_id} style={{
+                    display: 'block', textDecoration: 'none',
+                    padding: '14px 18px', borderRadius: 10,
+                    border: '1px solid var(--rule)', background: '#fff',
+                    transition: 'box-shadow .12s, border-color .12s',
+                  }}
+                  className="report-row"
+                  >
+                    {/* Report number + year badge */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start',
+                                  justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {rn && (
+                          <span style={{ fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
+                                         background: 'var(--navy)', color: '#fff',
+                                         padding: '2px 8px', borderRadius: 10 }}>
+                            No. {rn.number}/{rn.year}
+                          </span>
+                        )}
+                        {atypes.map(at => (
+                          <span key={at} style={{ fontFamily: 'system-ui', fontSize: 10, fontWeight: 600,
+                                                   background: 'var(--navy-lt)', color: 'var(--navy)',
+                                                   padding: '2px 7px', borderRadius: 10 }}>
+                            {AT_LABELS[at] || at}
+                          </span>
+                        ))}
+                      </div>
+                      <span style={{ fontFamily: 'system-ui', fontSize: 11, color: 'var(--ink3)',
+                                     flexShrink: 0 }}>
+                        {tdate ? tdate.slice(0, 7) : doc.year}
+                      </span>
+                    </div>
+
+                    {/* Title */}
+                    <div style={{ fontFamily: '"EB Garamond","Times New Roman",serif',
+                                  fontSize: 16, fontWeight: 600, color: 'var(--navy)',
+                                  lineHeight: 1.35, marginBottom: 6 }}>
+                      {title}
+                    </div>
+
+                    {/* Meta row */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {sectors.slice(0, 2).map(s => (
+                        <span key={s} style={{ fontFamily: 'system-ui', fontSize: 10,
+                                               color: 'var(--ink3)', background: '#f4f6f8',
+                                               padding: '2px 7px', borderRadius: 8,
+                                               border: '1px solid var(--rule-lt)' }}>
+                          {secLabelMap[s] || s.replace(/^SECT-\w+-?/, '').replace(/-/g,' ')}
+                        </span>
+                      ))}
+                      {doc.state_id && (
+                        <span style={{ fontFamily: 'system-ui', fontSize: 10, color: 'var(--ink3)' }}>
+                          {doc.state_id as string}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
         </div>
-      ) : (
-        <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-          {docs.map(doc => {
-            const title   = ml(doc.title as Record<string,string>)
-            const summary = ml((doc.summary||{}) as Record<string,string>)
-            const rn      = doc.report_number as {number:number;year:number}|undefined
-            const docJur  = doc.jurisdiction as string|undefined
-            return (
-              <Link key={doc.product_id} href={`/report/${doc.product_id}`}
-                style={{ textDecoration:'none', display:'block' }}
-                className="report-card-link">
-                <div className="report-card" style={{
-                  background:'#fff', border:'1px solid var(--rule)',
-                  borderRadius:'8px', padding:'16px 20px',
-                  boxShadow:'0 1px 3px rgba(26,58,107,.05)',
-                }}>
-                  {/* Badges */}
-                  <div style={{ display:'flex', gap:'6px', marginBottom:'10px', flexWrap:'wrap' }}>
-                    {doc.year && (
-                      <span style={{ fontFamily:'system-ui', fontSize:'10px', fontWeight:700, background:'var(--navy)', color:'#fff', padding:'2px 8px', borderRadius:'10px' }}>
-                        {doc.year}
-                      </span>
-                    )}
-                    {docJur && !jur && (
-                      <span style={{ fontFamily:'system-ui', fontSize:'10px', fontWeight:600, background:'var(--navy-lt)', color:'var(--navy)', padding:'2px 8px', borderRadius:'10px', border:'1px solid rgba(26,58,107,.15)' }}>
-                        {JUR_LABELS[docJur] || docJur}
-                      </span>
-                    )}
-                    {rn && (
-                      <span style={{ fontFamily:'system-ui', fontSize:'10px', color:'var(--ink3)', padding:'2px 8px', borderRadius:'10px', border:'1px solid var(--rule)' }}>
-                        Report No. {rn.number} of {rn.year}
-                      </span>
-                    )}
-                  </div>
-                  {/* Title */}
-                  <div style={{ fontFamily:'"EB Garamond","Times New Roman",serif', fontSize:'18px', fontWeight:700, color:'var(--ink)', lineHeight:1.35, marginBottom: summary ? '6px' : 0 }}>
-                    {title}
-                  </div>
-                  {/* Summary */}
-                  {summary && (
-                    <p style={{ fontFamily:'system-ui', fontSize:'13px', color:'var(--ink3)', margin:0, lineHeight:1.55,
-                      display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
-                      {summary}
-                    </p>
-                  )}
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
+      </div>
+
+      <style>{`
+        .report-row:hover {
+          box-shadow: 0 4px 16px rgba(26,58,107,.1);
+          border-color: rgba(26,58,107,.25) !important;
+        }
+      `}</style>
     </main>
   )
+}
+
+const AT_LABELS: Record<string, string> = {
+  'ATYPE-COMPLIANCE': 'Compliance Audit',   'ATYPE-PERFORMANCE': 'Performance Audit',
+  'ATYPE-FINANCIAL':  'Financial Audit',    'ATYPE-IT-AUDIT':    'IT Audit',
+  'ATYPE-CERTIFICATION': 'Certification',   'ATYPE-ENVIRONMENTAL': 'Environmental Audit',
 }
