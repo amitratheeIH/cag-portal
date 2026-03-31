@@ -144,7 +144,7 @@ export default function IndiaMapClient({
             onMouseMove={onMove}
             onMouseEnter={isUnion ? () => setMapHovered(true) : undefined}
             onMouseLeave={() => { setMapHovered(false); onSvgLeave() }}
-            onClick={isUnion ? () => window.location.href = '/audit-reports?jurisdiction=UNION' : undefined}
+            onClick={isUnion ? () => window.location.href = '/audit-reports/list?jurisdiction=UNION' : undefined}
           >
             {(Object.keys(PATH_DATA) as string[]).map(iso => (
               <path
@@ -161,7 +161,7 @@ export default function IndiaMapClient({
                 }}
                 onClick={!isUnion ? (e) => {
                   e.stopPropagation()
-                  if (inJur(iso, jurisdiction)) window.location.href = `/audit-reports?jurisdiction=${jurisdiction}&state=${iso}`
+                  if (inJur(iso, jurisdiction)) window.location.href = `/audit-reports/list?jurisdiction=${jurisdiction}&state=${iso}`
                 } : undefined}
                 onMouseEnter={e => onEnter(iso, e)}
                 onMouseLeave={onPathLeave}
@@ -227,7 +227,7 @@ export default function IndiaMapClient({
           {isUnion ? (
             /* UNION: single row — highlights when map is hovered, and vice versa */
             <Link
-              href="/audit-reports?jurisdiction=UNION"
+              href="/audit-reports/list?jurisdiction=UNION"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '12px 16px', textDecoration: 'none',
@@ -260,7 +260,7 @@ export default function IndiaMapClient({
                   <Link
                     key={id}
                     ref={el => { rowRefs.current[id] = el }}
-                    href={`/audit-reports?jurisdiction=${jurisdiction}&state=${id}`}
+                    href={`/audit-reports/list?jurisdiction=${jurisdiction}&state=${id}`}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '9px 16px', borderBottom: '1px solid var(--rule-lt)',
