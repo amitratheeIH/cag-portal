@@ -20,7 +20,7 @@ interface SectionResult {
   type: 'section'
   product_id: string; unit_id: string; unit_label: string
   para_number?: string; snippet: string; score?: number
-  report?: { title?: unknown; year?: number; jurisdiction?: string }
+  report?: { title?: unknown; year?: number; jurisdiction?: string; [key: string]: unknown }
   href: string
 }
 type SearchResult = ReportResult | SectionResult
@@ -328,8 +328,7 @@ function SectionCard({ result: s, query }: { result: SectionResult; query: strin
       {reportTitle && (
         <div style={{ fontFamily:'system-ui', fontSize:11.5, color:'var(--ink3)',
                       marginBottom:6, fontStyle:'italic' }}>
-          {reportTitle} {s.report?.['year' as keyof typeof s.report] &&
-            `(${s.report['year' as keyof typeof s.report]})`}
+          {reportTitle}{s.report?.year ? ` (${s.report.year})` : ''}
         </div>
       )}
       {/* Snippet */}
