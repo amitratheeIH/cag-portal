@@ -63,8 +63,8 @@ export default async function AuditReportsLandingPage() {
 
   interface TopicEntry { id: string; level: string; parent_id?: string; label?: { en?: string } }
 
-  const parents:  TopicEntry[] = (topicEntries as TopicEntry[]).filter(e => e.level === 'topic')
-  const children: TopicEntry[] = (topicEntries as TopicEntry[]).filter(e => e.level === 'sub_topic')
+  const parents:  TopicEntry[] = (topicEntries as unknown as TopicEntry[]).filter(e => e.level === 'topic')
+  const children: TopicEntry[] = (topicEntries as unknown as TopicEntry[]).filter(e => e.level === 'sub_topic')
 
   const byParent: Record<string, TopicEntry[]> = {}
   for (const p of parents) byParent[p.id] = []
@@ -141,7 +141,7 @@ export default async function AuditReportsLandingPage() {
                 {/* Action buttons */}
                 <div style={{ display: 'grid', gridTemplateColumns: j.hasMap ? '1fr 1fr' : '1fr',
                                borderTop: '1px solid var(--rule-lt)' }}>
-                  <Link href={'/audit-reports?jurisdiction=' + j.key} style={{
+                  <Link href={'/audit-reports/list?jurisdiction=' + j.key} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
                     padding: '10px 8px', textDecoration: 'none',
                     fontFamily: 'system-ui', fontSize: 11.5, fontWeight: 600, color: j.color,
@@ -196,7 +196,7 @@ export default async function AuditReportsLandingPage() {
                   background: '#fff', border: '1px solid var(--rule)', borderRadius: 10, overflow: 'hidden',
                 }}>
                   {/* Parent topic header */}
-                  <Link href={'/audit-reports?topic=' + p.id} style={{
+                  <Link href={'/audit-reports/list?topic=' + p.id} style={{
                     display: 'block', padding: '10px 14px',
                     background: 'var(--navy-lt)', textDecoration: 'none',
                     borderBottom: '1px solid var(--rule-lt)',
@@ -210,7 +210,7 @@ export default async function AuditReportsLandingPage() {
                   {/* Sub-topics */}
                   <div>
                     {subs.map((s, i) => (
-                      <Link key={s.id} href={'/audit-reports?topic=' + s.id} style={{
+                      <Link key={s.id} href={'/audit-reports/list?topic=' + s.id} style={{
                         display: 'block', padding: '7px 14px 7px 20px',
                         borderBottom: i < subs.length - 1 ? '1px solid var(--rule-lt)' : 'none',
                         textDecoration: 'none',
