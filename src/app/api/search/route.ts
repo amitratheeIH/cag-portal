@@ -207,7 +207,7 @@ export async function GET(req: NextRequest) {
       .find({ product_id: { $in: productIds } },
             { projection: { product_id:1, title:1, year:1, jurisdiction:1 } })
       .toArray()
-    for (const m of metas) reportMetaMap[String((m as { product_id:string }).product_id)] = m
+    for (const m of metas) reportMetaMap[String((m as unknown as { product_id:string }).product_id)] = m
   }
 
   const usedVector = vectorBlocks.length > 0
