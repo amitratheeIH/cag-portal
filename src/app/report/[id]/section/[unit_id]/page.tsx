@@ -6,7 +6,7 @@ import { getDb } from '@/lib/mongodb'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import BlockRenderer from '@/components/blocks/BlockRenderer'
+import { BlockRenderer } from '@/components/blocks/BlockRenderer'
 
 export async function generateMetadata({
   params,
