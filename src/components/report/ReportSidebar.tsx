@@ -28,11 +28,12 @@ function buildGroups<T extends { parentId:string; parentLabel:string; subLabel:s
 
 // ── Reusable collapsible group row ───────────────────────────
 function GroupRow({
-  parentLabel, colour, subs, defaultOpen = false,
+  parentLabel, parentHref, colour, subs, defaultOpen = false,
 }: {
   parentLabel: string
+  parentHref?: string          // optional — if set, label becomes a link
   colour: string
-  subs: { label:string; tags?:{ pnum:string; href:string }[] }[]
+  subs: { label:string; href?: string; tags?:{ pnum:string; href:string }[] }[]
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -41,7 +42,16 @@ function GroupRow({
       <button onClick={()=>setOpen(v=>!v)} aria-expanded={open}
         style={{ width:'100%', display:'flex', alignItems:'center', gap:'8px', padding:'9px 16px', background:'none', border:'none', cursor:'pointer', textAlign:'left' }}>
         <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:colour, flexShrink:0 }}/>
-        <span style={{ fontFamily:'system-ui', fontSize:'12.5px', fontWeight:600, color:'var(--ink)', flex:1 }}>{parentLabel}</span>
+        {parentHref ? (
+          <a href={parentHref} onClick={e=>e.stopPropagation()}
+            style={{ fontFamily:'system-ui', fontSize:'12.5px', fontWeight:600, color:colour, flex:1, textDecoration:'none' }}
+            onMouseEnter={e=>(e.currentTarget as HTMLElement).style.textDecoration='underline'}
+            onMouseLeave={e=>(e.currentTarget as HTMLElement).style.textDecoration='none'}>
+            {parentLabel}
+          </a>
+        ) : (
+          <span style={{ fontFamily:'system-ui', fontSize:'12.5px', fontWeight:600, color:'var(--ink)', flex:1 }}>{parentLabel}</span>
+        )}
         <span style={{ fontFamily:'system-ui', fontSize:'10px', fontWeight:700, background:colour+'18', color:colour, padding:'1px 7px', borderRadius:'10px', flexShrink:0 }}>
           {subs.length}
         </span>
@@ -56,7 +66,15 @@ function GroupRow({
             <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:'8px', padding:'4px 16px 4px 30px' }}>
               <div style={{ width:'4px', height:'4px', borderRadius:'50%', background:colour+'70', flexShrink:0, marginTop:'6px' }}/>
               <div style={{ flex:1 }}>
-                <span style={{ fontFamily:'system-ui', fontSize:'11.5px', color:'var(--ink2)' }}>{sub.label}</span>
+                {sub.href ? (
+                  <a href={sub.href} style={{ fontFamily:'system-ui', fontSize:'11.5px', color:'var(--navy)', textDecoration:'none' }}
+                    onMouseEnter={e=>(e.currentTarget as HTMLElement).style.textDecoration='underline'}
+                    onMouseLeave={e=>(e.currentTarget as HTMLElement).style.textDecoration='none'}>
+                    {sub.label}
+                  </a>
+                ) : (
+                  <span style={{ fontFamily:'system-ui', fontSize:'11.5px', color:'var(--ink2)' }}>{sub.label}</span>
+                )}
                 {sub.tags && sub.tags.length > 0 && (
                   <div style={{ display:'flex', gap:'4px', flexWrap:'wrap', marginTop:'3px' }}>
                     {sub.tags.map(t => (
@@ -197,8 +215,12 @@ export default function ReportSidebar({ detailRows, topics, afcCats, sectionAfcM
           {topicGroups.map(g => (
             <GroupRow key={g.parentId}
               parentLabel={g.parentLabel}
+              parentHref={'/audit-reports/list?topic=' + g.parentId}
               colour={AFC_COLOURS[g.parentId]||'#7a3a00'}
-              subs={g.subs.map(s=>({ label:s.label }))}
+              subs={g.subs.map(s=>({
+                label: s.label,
+                href:  '/audit-reports/list?topic=' + s.id,
+              }))}
             />
           ))}
         </section>

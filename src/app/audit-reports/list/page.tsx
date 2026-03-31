@@ -131,13 +131,13 @@ export default async function AuditReportsPage({
         {/* Jurisdiction chips */}
         <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
           {[
-            { label:'All',             href:'/audit-reports' },
+            { label:'All',             href:'/audit-reports/list' },
             { label:'Union',           href:'/audit-reports/list?jurisdiction=UNION' },
             { label:'State',           href:'/audit-reports/list?jurisdiction=STATE' },
             { label:'Union Territory', href:'/audit-reports/list?jurisdiction=UT' },
             { label:'Local Body',      href:'/audit-reports/list?jurisdiction=LG' },
           ].map(({ label, href }) => {
-            const active = href === `/audit-reports/list${jur ? `?jurisdiction=${jur}` : ''}`
+            const active = jur ? href === `/audit-reports/list?jurisdiction=${jur}` : href === '/audit-reports/list'
             return (
               <Link key={label} href={href} style={{
                 fontFamily:'system-ui', fontSize:'12px', fontWeight:600,
