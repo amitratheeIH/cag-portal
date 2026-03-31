@@ -175,6 +175,34 @@ export default async function AuditReportsLandingPage() {
         subs: (byParent[p.id] || []).map(s => ({ id: s.id, label: s.label?.en || s.id })),
       }))} />
 
+      {/* ── Full Text Search ──────────────────────────────────────────────────── */}
+      <section style={{ marginBottom: 20 }}>
+        <h2 style={{ fontFamily: '"EB Garamond","Times New Roman",serif',
+                     fontSize: 22, fontWeight: 700, color: 'var(--navy)', margin: '0 0 18px' }}>
+          Full Text Search
+        </h2>
+        <Link href="/audit-reports/search" style={{
+          display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
+          padding: '24px 28px', borderRadius: 10, textDecoration: 'none',
+          border: '1px solid var(--rule)', background: '#fff',
+          transition: 'box-shadow .15s',
+        }} className="search-entry">
+          <div style={{ fontSize: 32 }}>🔍</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: '"EB Garamond","Times New Roman",serif',
+                          fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>
+              Search report titles, findings and section text
+            </div>
+            <p style={{ fontFamily: 'system-ui', fontSize: 13, color: 'var(--ink3)', margin: 0 }}>
+              Search across summaries and individual sections. Results link directly to reports or specific sections.
+            </p>
+          </div>
+          <span style={{ fontFamily: 'system-ui', fontSize: 13, fontWeight: 600,
+                          color: 'var(--navy)', flexShrink: 0 }}>Search →</span>
+        </Link>
+        <style>{'.search-entry:hover{box-shadow:0 4px 16px rgba(26,58,107,.1)!important}'}</style>
+      </section>
+
     </main>
   )
 }
