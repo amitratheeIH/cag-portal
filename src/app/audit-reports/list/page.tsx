@@ -271,7 +271,7 @@ export default async function AuditReportsListPage({ searchParams }: { searchPar
       {/* Filters + results */}
       <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
 
-        <FiltersPanel filters={filterDefs} totalCount={docs.length} />
+        <FiltersPanel filters={filterDefs} totalCount={docs.length} activeParams={searchParams} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           {docs.length === 0 ? (

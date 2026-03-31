@@ -35,28 +35,36 @@ function dec(raw: string): { mode:'inc'|'exc'; value:string } {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
+// Filter keys that are user-controlled (not jurisdiction/state/topic)
+const USER_FILTER_KEYS = ['year', 'audit_type', 'sector', 'language']
+
 export default function FiltersPanel({
-  filters, totalCount,
+  filters, totalCount, activeParams = {},
 }: {
-  filters:    FilterDef[]
-  totalCount: number
+  filters:      FilterDef[]
+  totalCount:   number
+  activeParams?: Record<string, string | string[] | undefined>
 }) {
   const router  = useRouter()
   const path    = usePathname()
   const sp      = useSearchParams()
 
-  // Collect active filters for chip display
+  // Collect active filters for chip display.
+  // Uses URL searchParams directly so chips always show even when results = 0.
   const active: { key:string; value:string; label:string; mode:'inc'|'exc' }[] = []
+  const optLabelMap: Record<string, string> = {}
   for (const f of filters) {
     const opts = [...(f.options||[]), ...(f.groups?.flatMap(g=>[
       ...(g.parentCount !== undefined ? [{ value:g.parentValue, label:g.parentLabel, count:g.parentCount }] : []),
       ...g.options,
     ])||[])]
-    for (const raw of sp.getAll(f.key)) {
+    for (const o of opts) optLabelMap[f.key + ':' + o.value] = o.label
+  }
+  for (const key of USER_FILTER_KEYS) {
+    for (const raw of sp.getAll(key)) {
       const { mode, value } = dec(raw)
-      const opt = opts.find(o => o.value === value)
-      // Show chip even if option not in current results (it was excluded so it won't appear)
-      active.push({ key:f.key, value, label: opt?.label || value, mode })
+      const label = optLabelMap[key + ':' + value] || value
+      active.push({ key, value, label, mode })
     }
   }
 
