@@ -200,7 +200,7 @@ export async function GET(req: NextRequest) {
     .slice(0, 20)
 
   // ── 5. Enrich sections with report metadata ──────────────────────────────
-  const productIds = [...new Set(topSections.map(b => String(b.product_id)))]
+  const productIds = Array.from(new Set(topSections.map(b => String(b.product_id))))
   const reportMetaMap: Record<string, unknown> = {}
   if (productIds.length) {
     const metas = await db.collection('catalog_index')
