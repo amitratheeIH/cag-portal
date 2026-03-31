@@ -115,9 +115,10 @@ export async function GET(req: NextRequest) {
         { $search: {
             index: 'report_search',
             compound: { should: [
-              { text: { query: q, path: 'title',   score: { boost: { value: 4 } } } },
-              { text: { query: q, path: 'summary', score: { boost: { value: 2 } } } },
-              { text: { query: q, path: 'topics',  score: { boost: { value: 1 } } } },
+              // title and summary are stored as {en: "..."} objects — query the nested en field
+              { text: { query: q, path: 'title.en',   score: { boost: { value: 4 } } } },
+              { text: { query: q, path: 'summary.en', score: { boost: { value: 2 } } } },
+              { text: { query: q, path: 'topics',     score: { boost: { value: 1 } } } },
             ]},
           },
         },
