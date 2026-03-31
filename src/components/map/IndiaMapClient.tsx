@@ -66,6 +66,8 @@ export default function IndiaMapClient({
   const [tooltip,  setTooltip]  = useState<{ x: number; y: number } | null>(null)
   // Hover from sidebar (no tooltip, just map highlight)
   const [sideHov,  setSideHov]  = useState<string | null>(null)
+  // UNION mode: tracks whether cursor is anywhere over the map
+  const [mapHovered, setMapHovered] = useState(false)
   const activeIso = hovIso ?? sideHov  // map hover takes precedence
 
   // Ref to scroll the active sidebar row into view when map hover changes
@@ -79,7 +81,8 @@ export default function IndiaMapClient({
   // ── Colour logic ───────────────────────────────────────────────────────────
   const fill = (iso: string): string => {
     if (isUnion) {
-      // All regions same colour — map is one entity
+      // Whole map changes colour together — single entity
+      if (mapHovered) return '#2563EB'
       return totalReports > 0 ? '#1a3a6b' : '#c8ddf0'
     }
     if (!inJur(iso, jurisdiction)) return '#E0E2E4'
@@ -139,7 +142,8 @@ export default function IndiaMapClient({
               cursor: isUnion ? 'pointer' : 'default',
             }}
             onMouseMove={onMove}
-            onMouseLeave={onSvgLeave}
+            onMouseEnter={isUnion ? () => setMapHovered(true) : undefined}
+            onMouseLeave={() => { setMapHovered(false); onSvgLeave() }}
             onClick={isUnion ? () => window.location.href = '/audit-reports?jurisdiction=UNION' : undefined}
           >
             {(Object.keys(PATH_DATA) as string[]).map(iso => (
