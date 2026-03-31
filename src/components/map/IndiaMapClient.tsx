@@ -225,13 +225,17 @@ export default function IndiaMapClient({
 
           {/* Content */}
           {isUnion ? (
-            /* UNION: single row */
+            /* UNION: single row — highlights when map is hovered, and vice versa */
             <Link
               href="/audit-reports?jurisdiction=UNION"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '12px 16px', textDecoration: 'none', background: '#fff',
+                padding: '12px 16px', textDecoration: 'none',
+                background: mapHovered ? '#e8f0fb' : '#fff',
+                transition: 'background .12s',
               }}
+              onMouseEnter={() => setMapHovered(true)}
+              onMouseLeave={() => setMapHovered(false)}
             >
               <span style={{ fontFamily: 'system-ui', fontSize: 13, fontWeight: 600,
                              color: 'var(--navy)' }}>
