@@ -7,6 +7,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { BlockRenderer } from '@/components/blocks/BlockRenderer'
+import type { ContentBlock } from '@/types'
 
 export async function generateMetadata({
   params,
@@ -173,8 +174,8 @@ export default async function SectionViewerPage({
       }}>
         {blocks.length > 0 ? (
           /* Full block rendering if content available */
-          (blocks as Record<string, unknown>[]).map((block, i) => (
-            <BlockRenderer key={i} block={block} blockVersion="1.0" afcLabels={{}} />
+          (blocks as unknown as ContentBlock[]).map((block, i) => (
+            <BlockRenderer key={i} block={block} />
           ))
         ) : snippets.length > 0 ? (
           /* Fallback: text snippets from block_vectors */
