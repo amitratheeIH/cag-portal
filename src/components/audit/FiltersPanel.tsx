@@ -1,107 +1,101 @@
 'use client'
-// FiltersPanel.tsx v2
-// - Exclude button always visible (icon only, no text overflow)
-// - Inter-dependent: options disabled when they produce 0 results given active filters
-// - Hierarchical sector support via grouped FilterDef
+// FiltersPanel.tsx v3
+// archive.org-style faceted filters.
+// Counts always reflect the CURRENT result set (server-computed).
+// Include = narrow results to this value. Exclude = remove this value.
+// Every selection triggers a full page reload → server recomputes everything.
 
 import React, { useState } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface FilterOption {
-  value:    string
-  label:    string
-  count?:   number   // count WITH current filters applied — 0 means no results
-  disabled?: boolean  // true when 0 results would remain
+  value: string
+  label: string
+  count: number
 }
-
-export interface FilterGroup {
+export interface SectorGroup {
   parentValue: string
   parentLabel: string
+  parentCount?: number
   options:     FilterOption[]
 }
-
 export interface FilterDef {
-  key:        string
-  label:      string
-  options?:   FilterOption[]   // flat list
-  groups?:    FilterGroup[]    // hierarchical (sector)
-  maxShown?:  number           // default 8
+  key:      string
+  label:    string
+  options?: FilterOption[]   // flat
+  groups?:  SectorGroup[]    // hierarchical (sector)
+  maxShown?: number          // default 8
 }
 
 // ─── URL helpers ──────────────────────────────────────────────────────────────
-function encodeVal(mode: 'inc' | 'exc', v: string) {
-  return mode === 'exc' ? '-' + v : v
-}
-function decodeVal(raw: string): { mode: 'inc' | 'exc'; value: string } {
-  return raw.startsWith('-')
-    ? { mode: 'exc', value: raw.slice(1) }
-    : { mode: 'inc', value: raw }
+function enc(mode: 'inc'|'exc', v: string) { return mode === 'exc' ? '-'+v : v }
+function dec(raw: string): { mode:'inc'|'exc'; value:string } {
+  return raw.startsWith('-') ? { mode:'exc', value:raw.slice(1) } : { mode:'inc', value:raw }
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function FiltersPanel({
-  filters,
-  totalCount,
+  filters, totalCount,
 }: {
   filters:    FilterDef[]
   totalCount: number
 }) {
-  const router       = useRouter()
-  const pathname     = usePathname()
-  const searchParams = useSearchParams()
+  const router  = useRouter()
+  const path    = usePathname()
+  const sp      = useSearchParams()
 
-  // Collect all active filters for chip display
-  const active: { key: string; value: string; label: string; mode: 'inc' | 'exc' }[] = []
+  // Collect active filters for chip display
+  const active: { key:string; value:string; label:string; mode:'inc'|'exc' }[] = []
   for (const f of filters) {
-    const allOpts = [
-      ...(f.options || []),
-      ...(f.groups || []).flatMap(g => g.options),
-    ]
-    for (const raw of searchParams.getAll(f.key)) {
-      const { mode, value } = decodeVal(raw)
-      const opt = allOpts.find(o => o.value === value)
-      if (opt) active.push({ key: f.key, value, label: opt.label, mode })
+    const opts = [...(f.options||[]), ...(f.groups?.flatMap(g=>[
+      ...(g.parentCount !== undefined ? [{ value:g.parentValue, label:g.parentLabel, count:g.parentCount }] : []),
+      ...g.options,
+    ])||[])]
+    for (const raw of sp.getAll(f.key)) {
+      const { mode, value } = dec(raw)
+      const opt = opts.find(o => o.value === value)
+      // Show chip even if option not in current results (it was excluded so it won't appear)
+      active.push({ key:f.key, value, label: opt?.label || value, mode })
     }
   }
 
-  const buildUrl = (updates: Record<string, string[]>) => {
-    const p = new URLSearchParams(searchParams.toString())
-    for (const key of Object.keys(updates)) p.delete(key)
-    for (const [key, vals] of Object.entries(updates))
-      for (const v of vals) p.append(key, v)
-    return pathname + '?' + p.toString()
+  function buildUrl(updates: Record<string,string[]>) {
+    const p = new URLSearchParams(sp.toString())
+    for (const k of Object.keys(updates)) p.delete(k)
+    for (const [k, vals] of Object.entries(updates)) for (const v of vals) p.append(k, v)
+    return path + '?' + p.toString()
   }
 
-  const toggle = (key: string, value: string, mode: 'inc' | 'exc') => {
-    const cur     = searchParams.getAll(key)
-    const encoded = encodeVal(mode, value)
-    const opposite = encodeVal(mode === 'inc' ? 'exc' : 'inc', value)
+  function toggle(key: string, value: string, mode: 'inc'|'exc') {
+    const cur     = sp.getAll(key)
+    const encoded = enc(mode, value)
+    const opposite = enc(mode==='inc'?'exc':'inc', value)
     let next: string[]
     if (cur.includes(encoded)) {
+      // deselect
       next = cur.filter(v => v !== encoded)
     } else {
+      // select, removing opposite if present
       next = cur.filter(v => v !== opposite)
       next.push(encoded)
     }
     router.push(buildUrl({ [key]: next }))
   }
 
-  const remove = (key: string, value: string) => {
-    const next = searchParams.getAll(key)
-      .filter(v => decodeVal(v).value !== value)
-    router.push(buildUrl({ [key]: next }))
+  function remove(key: string, value: string) {
+    router.push(buildUrl({ [key]: sp.getAll(key).filter(v => dec(v).value !== value) }))
   }
 
-  const clearAll = () => {
-    const p = new URLSearchParams(searchParams.toString())
+  function clearAll() {
+    const p = new URLSearchParams(sp.toString())
     for (const f of filters) p.delete(f.key)
-    router.push(pathname + '?' + p.toString())
+    router.push(path + '?' + p.toString())
   }
 
-  const getState = (key: string, value: string): 'inc' | 'exc' | null => {
-    for (const raw of searchParams.getAll(key)) {
-      const d = decodeVal(raw)
+  function getState(key: string, value: string): 'inc'|'exc'|null {
+    for (const raw of sp.getAll(key)) {
+      const d = dec(raw)
       if (d.value === value) return d.mode
     }
     return null
@@ -111,17 +105,14 @@ export default function FiltersPanel({
     <aside style={{ width: 210, flexShrink: 0 }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    marginBottom: 12 }}>
-        <span style={{ fontFamily: 'system-ui', fontSize: 10.5, fontWeight: 700,
-                       letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--ink3)' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+        <span style={{ fontFamily:'system-ui', fontSize:10, fontWeight:700, letterSpacing:'1px',
+                       textTransform:'uppercase', color:'var(--ink3)' }}>
           Filters
         </span>
         {active.length > 0 && (
-          <button onClick={clearAll} style={{
-            fontFamily: 'system-ui', fontSize: 10, fontWeight: 600,
-            color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-          }}>
+          <button onClick={clearAll} style={{ fontFamily:'system-ui', fontSize:10, fontWeight:600,
+            color:'var(--red)', background:'none', border:'none', cursor:'pointer', padding:0 }}>
             Clear all
           </button>
         )}
@@ -129,24 +120,21 @@ export default function FiltersPanel({
 
       {/* Active chips */}
       {active.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 14 }}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginBottom:14 }}>
           {active.map(a => (
-            <span key={a.key + a.value + a.mode} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 3,
-              fontFamily: 'system-ui', fontSize: 10, fontWeight: 600,
-              padding: '2px 7px', borderRadius: 10,
-              background: a.mode === 'exc' ? '#fff0f0' : 'var(--navy-lt)',
-              color:      a.mode === 'exc' ? '#cc3333' : 'var(--navy)',
-              border:     '1px solid ' + (a.mode === 'exc' ? '#ffbbbb' : 'rgba(26,58,107,.2)'),
-              maxWidth:   160, overflow: 'hidden',
+            <span key={a.key+a.value+a.mode} style={{
+              display:'inline-flex', alignItems:'center', gap:3,
+              fontFamily:'system-ui', fontSize:10, fontWeight:600,
+              padding:'2px 7px', borderRadius:10, maxWidth:190,
+              background: a.mode==='exc' ? '#fff0f0' : 'var(--navy-lt)',
+              color:      a.mode==='exc' ? '#cc3333' : 'var(--navy)',
+              border:'1px solid '+(a.mode==='exc'?'#ffbbbb':'rgba(26,58,107,.2)'),
             }}>
-              {a.mode === 'exc' && <span style={{ fontSize: 8, flexShrink: 0 }}>✕</span>}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {a.label}
-              </span>
-              <button onClick={() => remove(a.key, a.value)} style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 11, lineHeight: 1, color: 'inherit', padding: 0, flexShrink: 0,
+              {a.mode==='exc' && <span style={{fontSize:8,flexShrink:0}}>✕</span>}
+              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.label}</span>
+              <button onClick={()=>remove(a.key,a.value)} style={{
+                background:'none',border:'none',cursor:'pointer',fontSize:11,
+                lineHeight:1,color:'inherit',padding:0,flexShrink:0,
               }}>×</button>
             </span>
           ))}
@@ -154,15 +142,13 @@ export default function FiltersPanel({
       )}
 
       {/* Count */}
-      <div style={{
-        fontFamily: 'system-ui', fontSize: 12, color: 'var(--ink3)',
-        marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid var(--rule)',
-      }}>
-        <strong style={{ color: 'var(--navy)' }}>{totalCount.toLocaleString('en-IN')}</strong>
-        {' '}report{totalCount !== 1 ? 's' : ''}{active.length > 0 ? ' match' : ''}
+      <div style={{ fontFamily:'system-ui', fontSize:12, color:'var(--ink3)',
+                    marginBottom:16, paddingBottom:12, borderBottom:'1px solid var(--rule)' }}>
+        <strong style={{color:'var(--navy)'}}>{totalCount.toLocaleString('en-IN')}</strong>
+        {' '}result{totalCount!==1?'s':''}
       </div>
 
-      {/* Filter groups */}
+      {/* Each filter */}
       {filters.map(f => (
         <FilterSection key={f.key} def={f} getState={getState} toggle={toggle} />
       ))}
@@ -170,104 +156,113 @@ export default function FiltersPanel({
   )
 }
 
-// ─── Single filter section ────────────────────────────────────────────────────
-function FilterSection({
-  def, getState, toggle,
-}: {
+// ─── One filter section ───────────────────────────────────────────────────────
+function FilterSection({ def, getState, toggle }: {
   def:      FilterDef
-  getState: (key: string, value: string) => 'inc' | 'exc' | null
-  toggle:   (key: string, value: string, mode: 'inc' | 'exc') => void
+  getState: (k:string, v:string) => 'inc'|'exc'|null
+  toggle:   (k:string, v:string, m:'inc'|'exc') => void
 }) {
   const maxShown = def.maxShown ?? 8
   const [expanded, setExpanded] = useState(false)
+
   const hasActive = [
-    ...(def.options || []),
-    ...(def.groups?.flatMap(g => g.options) || []),
+    ...(def.options||[]),
+    ...(def.groups?.flatMap(g=>[{value:g.parentValue},...g.options])||[]),
   ].some(o => getState(def.key, o.value) !== null)
 
-  // Flat layout
-  if (def.options) {
-    const visible = expanded ? def.options : def.options.slice(0, maxShown)
-    const hasMore = def.options.length > maxShown
-    return (
-      <div style={{ marginBottom: 18 }}>
-        <GroupLabel label={def.label} active={hasActive} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {visible.map(opt => (
-            <OptionRow key={opt.value} opt={opt} filterKey={def.key}
-              state={getState(def.key, opt.value)} toggle={toggle} />
-          ))}
-        </div>
-        {hasMore && (
-          <button onClick={() => setExpanded(v => !v)} style={{
-            marginTop: 4, fontFamily: 'system-ui', fontSize: 10.5, fontWeight: 600,
-            color: 'var(--navy)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
-          }}>
-            {expanded ? '↑ less' : `↓ ${def.options.length - maxShown} more`}
-          </button>
-        )}
+  return (
+    <div style={{ marginBottom:20 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:7 }}>
+        <span style={{ fontFamily:'system-ui', fontSize:10, fontWeight:700, letterSpacing:'.6px',
+                       textTransform:'uppercase', color: hasActive ? 'var(--navy)' : 'var(--ink3)' }}>
+          {def.label}
+        </span>
+        {hasActive && <span style={{width:5,height:5,borderRadius:'50%',background:'var(--navy)',display:'inline-block'}}/>}
       </div>
-    )
-  }
 
-  // Grouped (hierarchical) layout — sectors
-  if (def.groups) {
-    return (
-      <div style={{ marginBottom: 18 }}>
-        <GroupLabel label={def.label} active={hasActive} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* Flat */}
+      {def.options && (() => {
+        const shown = expanded ? def.options : def.options.slice(0, maxShown)
+        const hasMore = def.options.length > maxShown
+        return (
+          <>
+            <div style={{display:'flex',flexDirection:'column',gap:1}}>
+              {shown.map(opt => (
+                <OptionRow key={opt.value} opt={opt} filterKey={def.key}
+                  state={getState(def.key, opt.value)} toggle={toggle} />
+              ))}
+            </div>
+            {hasMore && (
+              <button onClick={()=>setExpanded(v=>!v)} style={{
+                marginTop:4, fontFamily:'system-ui', fontSize:10.5, fontWeight:600,
+                color:'var(--navy)', background:'none', border:'none', cursor:'pointer', padding:'2px 0',
+              }}>
+                {expanded ? '↑ less' : `↓ ${def.options.length - maxShown} more`}
+              </button>
+            )}
+          </>
+        )
+      })()}
+
+      {/* Grouped (sector) */}
+      {def.groups && (
+        <div style={{display:'flex',flexDirection:'column',gap:4}}>
           {def.groups.map(g => (
-            <SectorGroup key={g.parentValue} group={g} filterKey={def.key}
+            <SectorGroupRow key={g.parentValue} group={g} filterKey={def.key}
               getState={getState} toggle={toggle} />
           ))}
         </div>
-      </div>
-    )
-  }
-
-  return null
+      )}
+    </div>
+  )
 }
 
-// ─── Sector group (collapsible parent + sub-options) ─────────────────────────
-function SectorGroup({
-  group, filterKey, getState, toggle,
-}: {
-  group:     FilterGroup
+// ─── Sector parent + collapsible children ─────────────────────────────────────
+function SectorGroupRow({ group, filterKey, getState, toggle }: {
+  group:     SectorGroup
   filterKey: string
-  getState:  (key: string, value: string) => 'inc' | 'exc' | null
-  toggle:    (key: string, value: string, mode: 'inc' | 'exc') => void
+  getState:  (k:string, v:string) => 'inc'|'exc'|null
+  toggle:    (k:string, v:string, m:'inc'|'exc') => void
 }) {
-  const parentState = getState(filterKey, group.parentValue)
-  const anySubActive = group.options.some(o => getState(filterKey, o.value) !== null)
-  const [open, setOpen] = useState(parentState !== null || anySubActive)
+  const pState = getState(filterKey, group.parentValue)
+  const anyChildActive = group.options.some(o => getState(filterKey, o.value) !== null)
+  const [open, setOpen] = useState(pState !== null || anyChildActive)
 
   return (
-    <div style={{ border: '1px solid var(--rule-lt)', borderRadius: 7, overflow: 'hidden' }}>
+    <div style={{ border:'1px solid var(--rule-lt)', borderRadius:7, overflow:'hidden' }}>
       {/* Parent row */}
-      <div style={{ display: 'flex', alignItems: 'center',
-                    background: (parentState || anySubActive) ? 'var(--navy-lt)' : '#fafbfc' }}>
-        {/* Chevron toggle */}
-        <button onClick={() => setOpen(v => !v)} style={{
-          padding: '5px 6px', background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--ink3)', display: 'flex', alignItems: 'center', flexShrink: 0,
+      <div style={{ display:'flex', alignItems:'stretch',
+                    background: (pState || anyChildActive) ? 'var(--navy-lt)' : '#fafbfc' }}>
+        <button onClick={()=>setOpen(v=>!v)} style={{
+          padding:'5px 7px', background:'none', border:'none', cursor:'pointer',
+          display:'flex', alignItems:'center', flexShrink:0,
+          borderRight:'1px solid var(--rule-lt)',
         }}>
           <svg width="9" height="9" viewBox="0 0 9 9" fill="none"
-            style={{ transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'rotate(-90deg)' }}>
-            <path d="M1 3l3.5 3.5L8 3" stroke="currentColor" strokeWidth="1.5"
+            style={{transition:'transform .15s', transform: open?'rotate(0deg)':'rotate(-90deg)'}}>
+            <path d="M1 3l3.5 3L8 3" stroke="var(--ink3)" strokeWidth="1.5"
                   strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        {/* Parent option */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <OptionRow opt={{ value: group.parentValue, label: group.parentLabel }}
-            filterKey={filterKey} state={parentState} toggle={toggle} compact />
+        <div style={{flex:1, minWidth:0}}>
+          {group.parentCount !== undefined ? (
+            <OptionRow
+              opt={{ value:group.parentValue, label:group.parentLabel, count:group.parentCount }}
+              filterKey={filterKey} state={pState} toggle={toggle}
+            />
+          ) : (
+            <div style={{ padding:'6px 8px', fontFamily:'system-ui', fontSize:11.5,
+                          fontWeight:600, color:'var(--ink)' }}>
+              {group.parentLabel}
+            </div>
+          )}
         </div>
       </div>
-      {/* Sub-options */}
+      {/* Children */}
       {open && group.options.length > 0 && (
-        <div style={{ borderTop: '1px solid var(--rule-lt)', background: '#fff' }}>
+        <div style={{ background:'#fff', borderTop:'1px solid var(--rule-lt)' }}>
           {group.options.map(opt => (
-            <div key={opt.value} style={{ paddingLeft: 14 }}>
+            <div key={opt.value} style={{paddingLeft:12}}>
               <OptionRow opt={opt} filterKey={filterKey}
                 state={getState(filterKey, opt.value)} toggle={toggle} />
             </div>
@@ -279,109 +274,75 @@ function SectorGroup({
 }
 
 // ─── Single option row ────────────────────────────────────────────────────────
-function OptionRow({
-  opt, filterKey, state, toggle, compact = false,
-}: {
+function OptionRow({ opt, filterKey, state, toggle }: {
   opt:       FilterOption
   filterKey: string
-  state:     'inc' | 'exc' | null
-  toggle:    (key: string, value: string, mode: 'inc' | 'exc') => void
-  compact?:  boolean
+  state:     'inc'|'exc'|null
+  toggle:    (k:string, v:string, m:'inc'|'exc') => void
 }) {
-  const [hovered, setHovered] = useState(false)
-  const isInc  = state === 'inc'
-  const isExc  = state === 'exc'
-  const dimmed = opt.disabled && state === null
+  const [hov, setHov] = useState(false)
+  const isInc = state === 'inc'
+  const isExc = state === 'exc'
 
   return (
     <div
+      onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       style={{
-        display: 'flex', alignItems: 'center',
-        opacity: dimmed ? 0.4 : 1,
-        pointerEvents: dimmed ? 'none' : 'auto',
+        display:'flex', alignItems:'center',
         background: isInc ? 'var(--navy-lt)' : isExc ? '#fff5f5' : 'transparent',
-        borderRadius: compact ? 0 : 5,
-        transition: 'background .1s',
+        borderRadius:5, transition:'background .1s',
       }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
-      {/* Include click area */}
-      <button
-        onClick={() => toggle(filterKey, opt.value, 'inc')}
-        style={{
-          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
-          padding: compact ? '5px 8px 5px 0' : '5px 6px',
-          background: 'none', border: 'none', cursor: dimmed ? 'default' : 'pointer',
-          textAlign: 'left',
-        }}
-      >
+      {/* Include button */}
+      <button onClick={()=>toggle(filterKey, opt.value, 'inc')} style={{
+        flex:1, minWidth:0, display:'flex', alignItems:'center', gap:6,
+        padding:'5px 6px', background:'none', border:'none', cursor:'pointer', textAlign:'left',
+      }}>
         {/* Checkbox */}
         <span style={{
-          width: 12, height: 12, borderRadius: 3, flexShrink: 0,
-          border: '1.5px solid ' + (isInc ? 'var(--navy)' : isExc ? '#cc4444' : '#ccc'),
+          width:12, height:12, borderRadius:3, flexShrink:0,
+          border:'1.5px solid '+(isInc?'var(--navy)':isExc?'#cc4444':'#ccc'),
           background: isInc ? 'var(--navy)' : 'transparent',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          display:'flex', alignItems:'center', justifyContent:'center',
         }}>
           {isInc && <svg width="7" height="7" viewBox="0 0 7 7" fill="none">
             <path d="M1 3.5l1.8 1.8 3-3" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
           </svg>}
-          {isExc && <span style={{ fontSize: 9, color: '#cc4444', lineHeight: 1, marginTop: -1 }}>−</span>}
+          {isExc && <span style={{fontSize:9,color:'#cc4444',lineHeight:1}}>−</span>}
         </span>
-        {/* Label — truncates, never pushes exclude off screen */}
+        {/* Label — truncates, never hides exclude button */}
         <span style={{
-          fontFamily: 'system-ui', fontSize: 11.5,
-          color: isInc ? 'var(--navy)' : isExc ? '#cc4444' : 'var(--ink)',
-          fontWeight: (isInc || isExc) ? 600 : 400,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          flex: 1,
+          fontFamily:'system-ui', fontSize:11.5, flex:1,
+          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+          color: isInc?'var(--navy)':isExc?'#cc4444':'var(--ink)',
+          fontWeight: (isInc||isExc) ? 600 : 400,
         }}>
           {opt.label}
         </span>
-        {/* Count — hidden when excluded */}
-        {opt.count !== undefined && !isExc && (
-          <span style={{ fontFamily: 'system-ui', fontSize: 10, color: 'var(--ink3)', flexShrink: 0 }}>
-            {opt.count}
-          </span>
-        )}
+        {/* Count */}
+        <span style={{ fontFamily:'system-ui', fontSize:10, color:'var(--ink3)', flexShrink:0 }}>
+          {opt.count}
+        </span>
       </button>
 
-      {/* Exclude button — FIXED WIDTH, always right-aligned, visible on hover or when active */}
+      {/* Exclude button — fixed 24px, always right, shows on hover or when active */}
       <button
-        onClick={() => toggle(filterKey, opt.value, 'exc')}
-        title={isExc ? 'Remove exclusion' : 'Exclude this value'}
+        onClick={()=>toggle(filterKey, opt.value, 'exc')}
+        title={isExc ? 'Remove exclusion' : 'Exclude'}
         style={{
-          width: 24, height: 24, flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'none', border: 'none',
-          cursor: 'pointer',
+          width:24, height:24, flexShrink:0, padding:0,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          background:'none', border:'none', cursor:'pointer',
           color: isExc ? '#cc4444' : '#bbb',
-          opacity: (hovered || isExc) ? 1 : 0,
-          transition: 'opacity .1s, color .1s',
-          borderRadius: 4,
-          fontSize: 13,
+          opacity: (hov||isExc) ? 1 : 0,
+          transition:'opacity .1s, color .1s',
+          fontSize:12, borderRadius:4,
         }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#cc4444'}
-        onMouseLeave={e => { if (!isExc) (e.currentTarget as HTMLElement).style.color = '#bbb' }}
+        onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='#cc4444'}
+        onMouseLeave={e=>{ if(!isExc)(e.currentTarget as HTMLElement).style.color='#bbb' }}
       >
         {isExc ? '✕' : '⊘'}
       </button>
-    </div>
-  )
-}
-
-// ─── Group label ──────────────────────────────────────────────────────────────
-function GroupLabel({ label, active }: { label: string; active: boolean }) {
-  return (
-    <div style={{
-      fontFamily: 'system-ui', fontSize: 10, fontWeight: 700,
-      letterSpacing: '.6px', textTransform: 'uppercase',
-      color: active ? 'var(--navy)' : 'var(--ink3)',
-      marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6,
-    }}>
-      {label}
-      {active && <span style={{ width: 5, height: 5, borderRadius: '50%',
-                                background: 'var(--navy)', display: 'inline-block' }}/>}
     </div>
   )
 }
