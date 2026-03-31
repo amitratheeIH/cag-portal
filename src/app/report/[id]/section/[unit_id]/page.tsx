@@ -156,8 +156,8 @@ export default async function SectionViewerPage({
         <div style={{ fontFamily:'system-ui', fontSize:10, fontWeight:700, letterSpacing:'1px',
                       textTransform:'uppercase', color:'rgba(255,255,255,.6)', marginBottom:4 }}>
           {reportTitle}
-          {cat.year && <span> · {String(cat.year)}</span>}
-          {cat.jurisdiction && <span> · {String(cat.jurisdiction)}</span>}
+          {cat.year ? <span> · {String(cat.year)}</span> : null}
+          {cat.jurisdiction ? <span> · {String(cat.jurisdiction)}</span> : null}
         </div>
         <div style={{ fontFamily:'"EB Garamond","Times New Roman",serif',
                       fontSize:22, fontWeight:700, color:'#fff', lineHeight:1.3 }}>
