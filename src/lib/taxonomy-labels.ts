@@ -18,13 +18,21 @@ interface TaxonomyEntry {
 }
 
 function loadTaxonomy(filename: string): TaxonomyEntry[] {
-  try {
-    const p = join(process.cwd(), 'schemas', filename)
-    const raw = readFileSync(p, 'utf-8')
-    return JSON.parse(raw).entries || []
-  } catch {
-    return []
+  // Taxonomy JSON files live in repo root /taxonomies/, not /schemas/
+  const candidates = [
+    join(process.cwd(), 'taxonomies', filename),
+    join(process.cwd(), 'schemas', filename),        // fallback for old layout
+    join(process.cwd(), 'public', 'taxonomies', filename),
+  ]
+  for (const p of candidates) {
+    try {
+      const raw = readFileSync(p, 'utf-8')
+      return JSON.parse(raw).entries || []
+    } catch {
+      // try next candidate
+    }
   }
+  return []
 }
 
 // ── AFC labels ────────────────────────────────────────────────
@@ -64,12 +72,22 @@ export function getAfcMeta(): Record<string, AfcMeta> {
 
   _afcMetaCache = {}
   for (const e of entries) {
-    if (e.level === 'category') continue
+    const label = e.label?.en || e.id
+    if (e.level === 'category') {
+      // Top-level: no parent. Make it its own group so it renders correctly
+      // if a report stores a top-level category ID directly.
+      _afcMetaCache[e.id] = {
+        parentId:    e.id,
+        parentLabel: label,
+        subLabel:    label,
+      }
+      continue
+    }
     const parent = e.parent_id ? byId[e.parent_id] : null
     _afcMetaCache[e.id] = {
       parentId:    e.parent_id || 'other',
       parentLabel: parent?.label?.en || e.parent_id || 'Other',
-      subLabel:    e.label?.en || e.id,
+      subLabel:    label,
     }
   }
   return _afcMetaCache
@@ -111,12 +129,21 @@ export function getTopicMeta(): Record<string, TopicMeta> {
 
   _topicMetaCache = {}
   for (const e of entries) {
-    if (e.level === 'topic') continue
+    const label = e.label?.en || e.id
+    if (e.level === 'topic') {
+      // Top-level: no parent. Self-referential so direct topic IDs render correctly.
+      _topicMetaCache[e.id] = {
+        parentId:    e.id,
+        parentLabel: label,
+        subLabel:    label,
+      }
+      continue
+    }
     const parent = e.parent_id ? byId[e.parent_id] : null
     _topicMetaCache[e.id] = {
       parentId:    e.parent_id || 'other',
       parentLabel: parent?.label?.en || e.parent_id || 'Other',
-      subLabel:    e.label?.en || e.id,
+      subLabel:    label,
     }
   }
   return _topicMetaCache
