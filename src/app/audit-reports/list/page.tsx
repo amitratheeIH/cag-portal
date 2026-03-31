@@ -271,7 +271,22 @@ export default async function AuditReportsListPage({ searchParams }: { searchPar
       {/* Filters + results */}
       <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
 
-        <FiltersPanel filters={filterDefs} totalCount={docs.length} activeParams={searchParams} />
+        <FiltersPanel
+          filters={filterDefs}
+          totalCount={docs.length}
+          activeParams={searchParams}
+          labelMap={(() => {
+            const m: Record<string,string> = {}
+            for (const f of filterDefs) {
+              for (const o of f.options || []) m[f.key + ':' + o.value] = o.label
+              for (const g of f.groups  || []) {
+                m[f.key + ':' + g.parentValue] = g.parentLabel
+                for (const o of g.options) m[f.key + ':' + o.value] = o.label
+              }
+            }
+            return m
+          })()}
+        />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           {docs.length === 0 ? (

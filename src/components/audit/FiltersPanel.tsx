@@ -39,11 +39,12 @@ function dec(raw: string): { mode:'inc'|'exc'; value:string } {
 const USER_FILTER_KEYS = ['year', 'audit_type', 'sector', 'language']
 
 export default function FiltersPanel({
-  filters, totalCount, activeParams = {},
+  filters, totalCount, activeParams = {}, labelMap = {},
 }: {
   filters:      FilterDef[]
   totalCount:   number
   activeParams?: Record<string, string | string[] | undefined>
+  labelMap?:    Record<string, string>   // key:value → display label
 }) {
   const router  = useRouter()
   const path    = usePathname()
@@ -63,7 +64,7 @@ export default function FiltersPanel({
   for (const key of USER_FILTER_KEYS) {
     for (const raw of sp.getAll(key)) {
       const { mode, value } = dec(raw)
-      const label = optLabelMap[key + ':' + value] || value
+      const label = labelMap[key + ':' + value] || optLabelMap[key + ':' + value] || value
       active.push({ key, value, label, mode })
     }
   }
@@ -97,7 +98,8 @@ export default function FiltersPanel({
 
   function clearAll() {
     const p = new URLSearchParams(sp.toString())
-    for (const f of filters) p.delete(f.key)
+    // Use static key list — not filters prop (which is empty when results = 0)
+    for (const key of USER_FILTER_KEYS) p.delete(key)
     router.push(path + '?' + p.toString())
   }
 
