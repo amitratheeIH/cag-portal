@@ -340,8 +340,8 @@ export default async function ReportLandingPage({ params }: Props) {
             sectionAfcMap={sectionAfcMap as Record<string,{pnum:string;unit_id:string}[]>}
             recommendations={recommendations}
             reportId={params.id}
-            afcMeta={getAfcMeta()}
-            topicMeta={getTopicMeta()}
+            afcMeta={await getAfcMeta()}
+            topicMeta={await getTopicMeta()}
           />
         </div>
 
