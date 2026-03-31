@@ -207,12 +207,13 @@ interface PostcardProps {
   color: string
   colorLight: string
   title: string
+  titleHref?: string
   total: number | null
   items: { label: string; count: number | null; href?: string; placeholder?: boolean }[]
   placeholder?: boolean
 }
 
-function Postcard({ icon, color, colorLight, title, total, items, placeholder }: PostcardProps) {
+function Postcard({ icon, color, colorLight, title, titleHref, total, items, placeholder }: PostcardProps) {
   return (
     <div style={{
       background: '#fff',
@@ -244,9 +245,18 @@ function Postcard({ icon, color, colorLight, title, total, items, placeholder }:
             <div style={{ fontFamily: 'system-ui', fontSize: '9.5px', fontWeight: 700, letterSpacing: '.9px', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: '2px' }}>
               Category
             </div>
-            <div style={{ fontFamily: '"EB Garamond","Times New Roman",serif', fontSize: '17px', fontWeight: 700, color: 'var(--ink)', lineHeight: 1.2 }}>
-              {title}
-            </div>
+            {titleHref ? (
+              <a href={titleHref} style={{ fontFamily: '"EB Garamond","Times New Roman",serif', fontSize: '17px', fontWeight: 700, color: 'var(--navy)', lineHeight: 1.2, textDecoration: 'none' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.textDecoration = 'underline'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.textDecoration = 'none'}
+              >
+                {title}
+              </a>
+            ) : (
+              <div style={{ fontFamily: '"EB Garamond","Times New Roman",serif', fontSize: '17px', fontWeight: 700, color: 'var(--ink)', lineHeight: 1.2 }}>
+                {title}
+              </div>
+            )}
           </div>
           {/* Total count */}
           {!placeholder && (
@@ -467,6 +477,7 @@ export default function HomePage() {
               <Postcard
                 icon="📋" color="var(--navy)" colorLight="var(--navy-lt)"
                 title="Audit Reports"
+                titleHref="/audit-reports"
                 total={c.audit.total}
                 items={[
                   { label: 'Union Audit Reports',  count: c.audit.union,  href: '/audit-reports?jurisdiction=UNION' },
