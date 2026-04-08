@@ -2,6 +2,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import A11yBar from '@/components/home/A11yBar'
+import NavigationProgress from '@/components/NavigationProgress'
+import { Suspense } from 'react'
 
 export const metadata: Metadata = {
   title: {
@@ -16,6 +18,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <a href="#main-content" className="skip-nav">Skip to main content</a>
+
+        {/* Top progress bar — wraps in Suspense because useSearchParams requires it */}
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
 
         {/* ── Combined header: accessibility bar + site header ──────────────
             Wrapped in a single <header role="banner"> so the ReaderClient's
